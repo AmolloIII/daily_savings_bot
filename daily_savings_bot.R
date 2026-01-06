@@ -311,29 +311,26 @@ percentage_target <- round(cumulative_saved / yearly_target * 100, 1)
 # -------------------------
 # LAST TWO DAYS MISSED
 # -------------------------
-today <- Sys.Date()
-last_two_days <- today - c(1,2)
+# Prepare safe strings
+last_two_days_chr <- as.character(last_two_days)
+daily_quote <- as.character(daily_quote)
 
-last_two_days_chr <- format(as.Date(last_two_days), "%Y-%m-%d")
+msg <- paste0(
+  "⚠️ Reminder: You have missed savings for the last two days (",
+  paste(last_two_days_chr, collapse = ", "),
+  "). Don't break the streak!\n\n",
+  daily_quote
+)
+# URL-encode message
+msg_safe <- URLencode(msg)
 
+# Print debug info
+cat("BOT_TOKEN length:", nchar(BOT_TOKEN), "\n")
+cat("CHAT_ID length:", nchar(CHAT_ID), "\n")
+cat("Message preview:", substr(msg_safe, 1, 100), "\n")
 
-missed_days <- savings_data %>%
-  filter(date %in% last_two_days & status == "Missed")
-
-if (nrow(missed_days) == 2) {
-  
-  msg <- paste0(
-    "⚠️ Reminder: You have missed savings for the last two days (",
-    paste(last_two_days_chr, collapse = ", "),
-    "). Don't break the streak!",
-    "\n\n",
-    daily_quote
-  )
-  msg <- as.character(msg)
-  send_telegram_message(BOT_TOKEN, CHAT_ID, msg)
-}
-
-
+# Send
+send_telegram_message(BOT_TOKEN, CHAT_ID, msg_safe)
 
 ########## Weekly summary (every Sunday) ##########
 
@@ -443,6 +440,7 @@ daily_msg <- as.character(daily_msg)
 
 
 send_telegram_message(BOT_TOKEN, CHAT_ID, daily_msg)
+
 
 
 
