@@ -312,6 +312,8 @@ percentage_target <- round(cumulative_saved / yearly_target * 100, 1)
 # LAST TWO DAYS MISSED
 # -------------------------
 # Prepare safe strings
+today <- Sys.Date()
+last_two_days <- today - c(1,2)
 last_two_days_chr <- as.character(last_two_days)
 daily_quote <- as.character(daily_quote)
 
@@ -440,6 +442,7 @@ daily_msg <- as.character(daily_msg)
 
 
 send_telegram_message(BOT_TOKEN, CHAT_ID, daily_msg)
+
 
 
 
