@@ -261,6 +261,10 @@ if (gs_connected) {
 # -------------------------
 # FIX ACTUALS (15/day increment)
 # -------------------------
+sheet_id <- "11UH1us9ur-mqcG-DT0jMle9tQ9QLYp5fIqlwksZctuQ"
+savings_data <- read_sheet(sheet_id) %>% mutate(date = as.Date(date)) %>% arrange(date)
+
+
 savings_data <- savings_data %>%
   mutate(correct_actual = cumsum(rep(15, n())))
 
@@ -384,3 +388,4 @@ if (today == ceiling_date(today, "month") - days(1)) {
   
   send_telegram_message(month_msg, photo = month_plot_file)
 }
+
