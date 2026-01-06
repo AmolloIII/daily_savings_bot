@@ -29,6 +29,12 @@ jobs:
             'googlesheets4','gargle', 'base64enc'
           ))"
 
+
+      - name: Write Google credentials
+        run: |
+          echo "${{ env.GSHEET_JSON_B64 }}" | base64 --decode > gs.json
+          chmod 600 gs.json
+          
       - name: Test libraries
         run: |
           R -e "library(googlesheets4); library(dplyr); library(ggplot2); print('Packages loaded successfully')"
