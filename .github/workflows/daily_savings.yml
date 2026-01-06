@@ -1,8 +1,11 @@
 name: Daily Savings Telegram Bot
 
 on:
+  # Manual trigger
+  workflow_dispatch:
+
+  # Scheduled trigger: 7 PM Kenya Time = 16:00 UTC
   schedule:
-    # 7 PM Kenya Time = 16:00 UTC
     - cron: '0 16 * * *'
 
 jobs:
