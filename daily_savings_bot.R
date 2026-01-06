@@ -230,21 +230,26 @@ daily_quote <- tryCatch({
 BOT_TOKEN <- Sys.getenv("BOT_TOKEN")
 CHAT_ID <- Sys.getenv("CHAT_ID")
 
-send_telegram_message <- function(text, chat_id = CHAT_ID, bot_token = BOT_TOKEN, photo = NULL) {
-  if (!is.null(photo)) {
-    httr::POST(
-      url = paste0("https://api.telegram.org/bot", bot_token, "/sendPhoto"),
-      body = list(chat_id = chat_id, photo = httr::upload_file(photo), caption = text, parse_mode = "Markdown"),
-      encode = "multipart"
-    )
-  } else {
-    httr::POST(
-      url = paste0("https://api.telegram.org/bot", bot_token, "/sendMessage"),
-      body = list(chat_id = chat_id, text = text, parse_mode = "Markdown"),
-      encode = "form"
-    )
+send_telegram_message <- function(bot_token, chat_id, text, parse_mode = NULL) {
+  # URL-encode the text
+  text_enc <- URLencode(text, reserved = TRUE)
+  
+  url <- paste0(
+    "https://api.telegram.org/bot", BOT_TOKEN,
+    "/sendMessage?chat_id=", CHAT_ID,
+    "&text=", text_enc
+  )
+  
+  # Add parse_mode if provided
+  if (!is.null(parse_mode)) {
+    url <- paste0(url, "&parse_mode=", parse_mode)
   }
+  
+  res <- httr::GET(url)
+  httr::stop_for_status(res)
+  return(res)
 }
+
 
 # -------------------------
 # GOOGLE SHEETS AUTH
@@ -486,6 +491,8 @@ cat("Sending daily message...\n", "Preview:", substr(daily_msg_safe, 1, 100), "\
 
 # Send
 send_telegram_message(BOT_TOKEN, CHAT_ID, daily_msg_safe, parse_mode = "MarkdownV2")
+
+
 
 
 
