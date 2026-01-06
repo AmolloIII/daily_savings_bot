@@ -210,8 +210,13 @@ quotes_df <- tibble(raw = quote_lines) %>%
     author = str_extract(raw, '(?<=–\\s).*') # extract text after "– "
   ) %>%
   select(quote, author)
+
+
+
+
+
 # -------------------------
-# CONFIG: Telegram
+# TELEGRAM CONFIG
 # -------------------------
 BOT_TOKEN <- Sys.getenv("BOT_TOKEN")
 CHAT_ID <- Sys.getenv("CHAT_ID")
@@ -220,7 +225,7 @@ send_telegram_message <- function(text, chat_id = CHAT_ID, bot_token = BOT_TOKEN
   if (!is.null(photo)) {
     httr::POST(
       url = paste0("https://api.telegram.org/bot", bot_token, "/sendPhoto"),
-      body = list(chat_id = chat_id, photo = upload_file(photo), caption = text, parse_mode = "Markdown"),
+      body = list(chat_id = chat_id, photo = httr::upload_file(photo), caption = text, parse_mode = "Markdown"),
       encode = "multipart"
     )
   } else {
@@ -233,17 +238,12 @@ send_telegram_message <- function(text, chat_id = CHAT_ID, bot_token = BOT_TOKEN
 }
 
 # -------------------------
-# CONFIG: Google Sheet
+# GOOGLE SHEETS AUTH
 # -------------------------
-# Read JSON from environment variable
 gjson <- Sys.getenv("GSHEET_JSON")
-
 if (gjson != "") {
-  # Write JSON to a temp file
   json_file <- tempfile(fileext = ".json")
   writeLines(gjson, con = json_file)
-  
-  # Authenticate with gs4
   gs4_auth(path = json_file)
   gs_connected <- TRUE
 } else {
@@ -251,17 +251,15 @@ if (gjson != "") {
   message("Google Sheets not connected. Data will not be saved.")
 }
 
-# Now you can read your sheet
+sheet_url <- "YOUR_GOOGLE_SHEET_URL"  # replace with your sheet
 if (gs_connected) {
-  savings_data <- read_sheet("YOUR_GOOGLE_SHEET_URL") %>%
-    mutate(date = as.Date(date))
+  savings_data <- read_sheet(sheet_url) %>% mutate(date = as.Date(date)) %>% arrange(date)
+} else {
+  stop("Cannot continue without Google Sheets connection")
 }
 
-sheet_url <- "YOUR_GOOGLE_SHEET_URL"  # replace with your sheet
-savings_data <- read_sheet(sheet_url) %>% mutate(date = as.Date(date)) %>% arrange(date)
-
 # -------------------------
-# Fix actuals (15 shillings/day increment)
+# FIX ACTUALS (15/day increment)
 # -------------------------
 savings_data <- savings_data %>%
   mutate(correct_actual = cumsum(rep(15, n())))
@@ -269,7 +267,7 @@ savings_data <- savings_data %>%
 today <- Sys.Date()
 
 # -------------------------
-# Daily Metrics
+# DAILY METRICS
 # -------------------------
 today_row <- savings_data %>% filter(date == today)
 leoste <- today_row$correct_actual
@@ -280,7 +278,7 @@ yearly_target <- 86070
 percentage_target <- round(cumulative_saved / yearly_target * 100, 1)
 
 # -------------------------
-# Last two days missed
+# LAST TWO DAYS MISSED
 # -------------------------
 last_two_days <- savings_data %>%
   filter(date %in% (today - 1:2) & status == "Missed") %>%
@@ -291,7 +289,7 @@ missed_msg <- if(length(last_two_days) > 0) {
 } else { "" }
 
 # -------------------------
-# Daily Quote
+# RANDOM QUOTE
 # -------------------------
 daily_quote <- tryCatch({
   sample_n(quotes_df, 1) %>%
@@ -300,7 +298,7 @@ daily_quote <- tryCatch({
 }, error = function(e) { "Keep going! Every shilling counts." })
 
 # -------------------------
-# Daily Message
+# DAILY MESSAGE
 # -------------------------
 daily_msg <- paste0(
   "*🕖 DAILY SAVINGS UPDATE*\n\n",
@@ -314,7 +312,7 @@ daily_msg <- paste0(
 )
 
 # -------------------------
-# Plot Monthly Savings (Daily Line)
+# MONTHLY CHART
 # -------------------------
 monthly_data <- savings_data %>%
   filter(month(date) == month(today) & year(date) == year(today))
@@ -326,20 +324,18 @@ p <- ggplot(monthly_data, aes(x = day_of_month, y = correct_actual)) +
   theme_minimal()
 ggsave(plot_file, p, width = 6, height = 4, dpi = 150)
 
-# -------------------------
-# Send Daily Message
-# -------------------------
 send_telegram_message(daily_msg, photo = plot_file)
 
 # -------------------------
-# Weekly Message (every Sunday)
+# WEEKLY MESSAGE (Sunday)
 # -------------------------
-if (wday(today) == 1) {  # Sunday = 1
+if (wday(today) == 1) {
   week_start <- today - 6
   week_data <- savings_data %>% filter(date >= week_start & date <= today)
   week_saved <- sum(week_data$correct_actual[week_data$status == "Saved"])
   days_saved <- sum(week_data$status == "Saved")
   days_missed <- sum(week_data$status == "Missed")
+  
   week_msg <- paste0(
     "*📅 WEEKLY SAVINGS SUMMARY*\n\n",
     "Week: ", format(week_start, "%d %b"), " – ", format(today, "%d %b"), "\n",
@@ -349,7 +345,6 @@ if (wday(today) == 1) {  # Sunday = 1
     "Success? ", if(days_saved >= 5) "✅ Great week!" else "⚠️ Needs improvement"
   )
   
-  # Weekly chart
   week_plot_file <- tempfile(fileext = ".png")
   p_week <- ggplot(week_data, aes(x = date, y = correct_actual)) +
     geom_line(color = "darkgreen") + geom_point(color = "green") +
@@ -362,13 +357,14 @@ if (wday(today) == 1) {  # Sunday = 1
 }
 
 # -------------------------
-# Monthly Message (last day of month)
+# MONTHLY MESSAGE (last day of month)
 # -------------------------
 if (today == ceiling_date(today, "month") - days(1)) {
   month_data <- savings_data %>% filter(month(date) == month(today) & year(date) == year(today))
   month_saved <- sum(month_data$correct_actual[month_data$status == "Saved"])
   days_saved <- sum(month_data$status == "Saved")
   days_missed <- sum(month_data$status == "Missed")
+  
   month_msg <- paste0(
     "*📊 MONTHLY SAVINGS SUMMARY*\n\n",
     "Month: ", month(today, label = TRUE, abbr = FALSE), "\n",
@@ -378,7 +374,6 @@ if (today == ceiling_date(today, "month") - days(1)) {
     "Success? ", if(days_saved >= 20) "✅ Excellent!" else "⚠️ Could do better"
   )
   
-  # Monthly chart
   month_plot_file <- tempfile(fileext = ".png")
   p_month <- ggplot(month_data, aes(x = day_of_month, y = correct_actual)) +
     geom_line(color = "purple") + geom_point(color = "darkpurple") +
@@ -389,5 +384,3 @@ if (today == ceiling_date(today, "month") - days(1)) {
   
   send_telegram_message(month_msg, photo = month_plot_file)
 }
-
-
