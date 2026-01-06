@@ -250,7 +250,7 @@ send_telegram_message <- function(text, chat_id = CHAT_ID, bot_token = BOT_TOKEN
 #}
 
 GSHEET_JSON_B64 <- Sys.getenv("GSHEET_JSON_B64")
-
+YOUR_GOOGLE_SHEET_URL <- Sys.getenv("YOUR_GOOGLE_SHEET_URL")
 # Validate environment variables
 if (YOUR_GOOGLE_SHEET_URL == "" || GSHEET_JSON_B64 == "") {
   stop("❌ YOUR_GOOGLE_SHEET_URL or GSHEET_JSON_B64 not set in environment")
@@ -404,6 +404,7 @@ if (today == ceiling_date(today, "month") - days(1)) {
   
   send_telegram_message(month_msg, photo = month_plot_file)
 }
+
 
 
 
