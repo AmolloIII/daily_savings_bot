@@ -332,27 +332,7 @@ daily_quote <- tryCatch({
     pull(full)
 }, error = function(e) { "Keep going! Every shilling counts." })
 
-# -------------------------
-# DAILY MESSAGE
-# -------------------------
-########## Daily missed savings check ##########
 
-today <- Sys.Date()
-last_two_days <- today - c(1,2)
-
-missed_days <- savings_data %>%
-  filter(date %in% last_two_days & status == "Missed")
-
-if(nrow(missed_days) == 2){
-  msg <- paste0(
-    "⚠️ Reminder: You have missed savings for the last two days (", 
-    paste(last_two_days, collapse=", "), 
-    "). Don't break the streak!",
-    "\n\n",   # <- two newlines for a blank line
-    quote
-  )
-  send_telegram_message(BOT_TOKEN, CHAT_ID, msg)
-}
 
 
 ########## Weekly summary (every Sunday) ##########
@@ -415,6 +395,9 @@ if(today == month_end){
   send_telegram_photo(BOT_TOKEN, CHAT_ID, "monthly_chart.png", caption)
 }
 
+# -------------------------
+# DAILY MESSAGE
+# -------------------------
 
 ########## Daily detailed message at 7:00pm ##########
 
@@ -459,6 +442,7 @@ daily_msg <- paste0(
 
 
 send_telegram_message(BOT_TOKEN, CHAT_ID, daily_msg)
+
 
 
 
