@@ -485,9 +485,10 @@ escape_markdown_v2 <- function(text) {
   return(text)
 }
 
+leo <- as.Date(Sys.time(), tz = "Africa/Nairobi")
 
 leoste <- corrected_savings %>%
-  filter(date == Sys.Date()) %>%
+  filter(date == leo) %>%
   .[["corrected_savings"]]
 
 # -------------------------
@@ -513,6 +514,7 @@ cat("Sending daily message...\n", "Preview:", substr(daily_msg_safe, 1, 100), "\
 
 
 send_telegram_message(BOT_TOKEN, CHAT_ID, daily_msg_safe, parse_mode = "MarkdownV2")
+
 
 
 
