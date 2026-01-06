@@ -322,90 +322,130 @@ daily_quote <- tryCatch({
 # -------------------------
 # DAILY MESSAGE
 # -------------------------
+########## Daily missed savings check ##########
+
+today <- Sys.Date()
+last_two_days <- today - c(1,2)
+
+missed_days <- savings_data %>%
+  filter(date %in% last_two_days & status == "Missed")
+
+if(nrow(missed_days) == 2){
+  msg <- paste0(
+    "⚠️ Reminder: You have missed savings for the last two days (", 
+    paste(last_two_days, collapse=", "), 
+    "). Don't break the streak!",
+    "\n\n",   # <- two newlines for a blank line
+    quote
+  )
+  send_telegram_message(BOT_TOKEN, CHAT_ID, msg)
+}
+
+
+########## Weekly summary (every Sunday) ##########
+
+week_start <- floor_date(today, unit = "week") # Monday
+week_end <- ceiling_date(today, unit = "week") - 1 # Sunday
+
+weekly_data <- savings_data %>%
+  filter(date >= week_start & date <= week_end)
+
+if(wday(today) == 1){ # Sunday
+  total_saved <- sum(weekly_data$actual, na.rm = TRUE)
+  days_saved <- sum(weekly_data$status == "Saved", na.rm = TRUE)
+  
+  # Plot weekly savings
+  library(ggplot2)
+  png("weekly_chart.png", width = 800, height = 600)
+  ggplot(weekly_data, aes(x=date, y=actual)) +
+    geom_col(fill="steelblue") +
+    geom_text(aes(label=actual), vjust=-0.5) +
+    labs(title=paste0("Weekly Savings: ", week_start, " to ", week_end),
+         x="Date", y="Amount Saved (KES)") +
+    theme_minimal()
+  dev.off()
+  
+  caption <- paste0("📊 Weekly Savings Summary\nTotal Saved: KES ", total_saved, 
+                    "\nDays Saved: ", days_saved, "/", nrow(weekly_data),
+                    "\n\n",   # <- two newlines for a blank line
+                    quote)
+  
+  send_telegram_photo(BOT_TOKEN, CHAT_ID, "weekly_chart.png", caption)
+}
+
+########## Monthly summary (last day of month) ##########
+
+month_start <- floor_date(today, "month")
+month_end <- ceiling_date(today, "month") - 1
+
+monthly_data <- savings_data %>%
+  filter(date >= month_start & date <= month_end)
+
+if(today == month_end){
+  total_saved <- sum(monthly_data$actual, na.rm = TRUE)
+  days_saved <- sum(monthly_data$status == "Saved", na.rm = TRUE)
+  
+  png("monthly_chart.png", width = 800, height = 600)
+  ggplot(monthly_data, aes(x=date, y=actual)) +
+    geom_col(fill="darkgreen") +
+    geom_line(aes(y=cumsum(actual)), color="blue", size=1) +
+    labs(title=paste0("Monthly Savings: ", month_start, " to ", month_end),
+         x="Date", y="Amount Saved (KES)") +
+    theme_minimal()
+  dev.off()
+  
+  caption <- paste0("📈 Monthly Savings Summary\nTotal Saved: KES ", total_saved,
+                    "\nDays Saved: ", days_saved, "/", nrow(monthly_data),
+                    "\n\n",   # <- two newlines for a blank line
+                    quote)
+  
+  send_telegram_photo(BOT_TOKEN, CHAT_ID, "monthly_chart.png", caption)
+}
+
+
+########## Daily detailed message at 7:00pm ##########
+
+today_data <- savings_data %>% filter(date == today)
+cumulative_saved <- sum(savings_data$actual[savings_data$date <= today], na.rm = TRUE)
+percentage_target <- round(cumulative_saved / 86070 * 100, 1)
+leoste <- savings_data %>%
+  filter(date == Sys.Date()) %>%
+  pull(actual)
+# Initialize
+corrected_savings <- savings_data %>%
+  arrange(date) %>%
+  mutate(correct_actual = 0)  # placeholder
+
+# Loop through each row to generate the correct sequence
+for(i in 1:nrow(corrected_savings)) {
+  if(i == 1){
+    corrected_savings$correct_actual[i] <- 15  # base value
+  } else {
+    corrected_savings$correct_actual[i] <- corrected_savings$correct_actual[i-1] + 15
+  }
+}
+
+# Filter missed rows and sum their corrected actuals
+total_missed <- corrected_savings %>%
+  filter(status == "Missed") %>%
+  summarise(total_missed = sum(correct_actual)) %>%
+  pull(total_missed)
+
+# Using MarkdownV2 formatting
 daily_msg <- paste0(
-  "*🕖 DAILY SAVINGS UPDATE*\n\n",
+  "*🕖 DAILY SAVINGS UPDATE*\n\n",           # bold heading, extra newline for spacing
   "*Day:* ", day(today), " of ", month(today, label = TRUE, abbr = FALSE), "\n",
   "*Today's Target:* KES ", leoste, "\n",
   "*Cumulative Saved:* KES ", cumulative_saved, "\n",
   "*Cumulative Deficit:* KES ", total_missed, "\n",
   "*Progress:* ", percentage_target, "%\n\n",
-  missed_msg,
-  "💡 *Motivation:* ", daily_quote
+  "💡 *Motivation:* ", quote
 )
 
-# -------------------------
-# MONTHLY CHART
-# -------------------------
-monthly_data <- savings_data %>%
-  filter(month(date) == month(today) & year(date) == year(today))
-plot_file <- tempfile(fileext = ".png")
-p <- ggplot(monthly_data, aes(x = day_of_month, y = correct_actual)) +
-  geom_line(color = "blue") + geom_point(color = "darkblue") +
-  labs(title = paste0("Savings Progress: ", month(today, label = TRUE, abbr = FALSE)),
-       x = "Day of Month", y = "Amount Saved (KES)") +
-  theme_minimal()
-ggsave(plot_file, p, width = 6, height = 4, dpi = 150)
+# When sending via telegram, make sure to set parse_mode = "MarkdownV2"
 
-send_telegram_message(daily_msg, photo = plot_file)
 
-# -------------------------
-# WEEKLY MESSAGE (Sunday)
-# -------------------------
-if (wday(today) == 1) {
-  week_start <- today - 6
-  week_data <- savings_data %>% filter(date >= week_start & date <= today)
-  week_saved <- sum(week_data$correct_actual[week_data$status == "Saved"])
-  days_saved <- sum(week_data$status == "Saved")
-  days_missed <- sum(week_data$status == "Missed")
-  
-  week_msg <- paste0(
-    "*📅 WEEKLY SAVINGS SUMMARY*\n\n",
-    "Week: ", format(week_start, "%d %b"), " – ", format(today, "%d %b"), "\n",
-    "Total Saved: KES ", week_saved, "\n",
-    "Days Saved: ", days_saved, "\n",
-    "Days Missed: ", days_missed, "\n",
-    "Success? ", if(days_saved >= 5) "✅ Great week!" else "⚠️ Needs improvement"
-  )
-  
-  week_plot_file <- tempfile(fileext = ".png")
-  p_week <- ggplot(week_data, aes(x = date, y = correct_actual)) +
-    geom_line(color = "darkgreen") + geom_point(color = "green") +
-    labs(title = paste0("Weekly Savings: ", format(week_start, "%d %b"), " – ", format(today, "%d %b")),
-         x = "Date", y = "Amount Saved (KES)") +
-    theme_minimal()
-  ggsave(week_plot_file, p_week, width = 6, height = 4, dpi = 150)
-  
-  send_telegram_message(week_msg, photo = week_plot_file)
-}
-
-# -------------------------
-# MONTHLY MESSAGE (last day of month)
-# -------------------------
-if (today == ceiling_date(today, "month") - days(1)) {
-  month_data <- savings_data %>% filter(month(date) == month(today) & year(date) == year(today))
-  month_saved <- sum(month_data$correct_actual[month_data$status == "Saved"])
-  days_saved <- sum(month_data$status == "Saved")
-  days_missed <- sum(month_data$status == "Missed")
-  
-  month_msg <- paste0(
-    "*📊 MONTHLY SAVINGS SUMMARY*\n\n",
-    "Month: ", month(today, label = TRUE, abbr = FALSE), "\n",
-    "Total Saved: KES ", month_saved, "\n",
-    "Days Saved: ", days_saved, "\n",
-    "Days Missed: ", days_missed, "\n",
-    "Success? ", if(days_saved >= 20) "✅ Excellent!" else "⚠️ Could do better"
-  )
-  
-  month_plot_file <- tempfile(fileext = ".png")
-  p_month <- ggplot(month_data, aes(x = day_of_month, y = correct_actual)) +
-    geom_line(color = "purple") + geom_point(color = "darkpurple") +
-    labs(title = paste0("Monthly Savings: ", month(today, label = TRUE, abbr = FALSE)),
-         x = "Day", y = "Amount Saved (KES)") +
-    theme_minimal()
-  ggsave(month_plot_file, p_month, width = 6, height = 4, dpi = 150)
-  
-  send_telegram_message(month_msg, photo = month_plot_file)
-}
+send_telegram_message(BOT_TOKEN, CHAT_ID, daily_msg)
 
 
 
