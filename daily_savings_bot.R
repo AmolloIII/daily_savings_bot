@@ -212,6 +212,15 @@ quotes_df <- tibble(raw = quote_lines) %>%
   select(quote, author)
 
 
+# -------------------------
+# RANDOM QUOTE
+# -------------------------
+daily_quote <- tryCatch({
+  sample_n(quotes_df, 1) %>%
+    mutate(full = paste0(quote, " – ", author)) %>%
+    pull(full)
+}, error = function(e) { "Keep going! Every shilling counts." })
+
 
 
 
@@ -318,20 +327,11 @@ if (nrow(missed_days) == 2) {
     paste(last_two_days_chr, collapse = ", "),
     "). Don't break the streak!",
     "\n\n",
-    quote
+    daily_quote
   )
   
   send_telegram_message(BOT_TOKEN, CHAT_ID, msg)
 }
-# -------------------------
-# RANDOM QUOTE
-# -------------------------
-daily_quote <- tryCatch({
-  sample_n(quotes_df, 1) %>%
-    mutate(full = paste0(quote, " – ", author)) %>%
-    pull(full)
-}, error = function(e) { "Keep going! Every shilling counts." })
-
 
 
 
@@ -361,7 +361,7 @@ if(wday(today) == 1){ # Sunday
   caption <- paste0("📊 Weekly Savings Summary\nTotal Saved: KES ", total_saved, 
                     "\nDays Saved: ", days_saved, "/", nrow(weekly_data),
                     "\n\n",   # <- two newlines for a blank line
-                    quote)
+                    daily_quote)
   
   send_telegram_photo(BOT_TOKEN, CHAT_ID, "weekly_chart.png", caption)
 }
@@ -390,7 +390,7 @@ if(today == month_end){
   caption <- paste0("📈 Monthly Savings Summary\nTotal Saved: KES ", total_saved,
                     "\nDays Saved: ", days_saved, "/", nrow(monthly_data),
                     "\n\n",   # <- two newlines for a blank line
-                    quote)
+                    daily_quote)
   
   send_telegram_photo(BOT_TOKEN, CHAT_ID, "monthly_chart.png", caption)
 }
@@ -435,13 +435,14 @@ daily_msg <- paste0(
   "*Cumulative Saved:* KES ", cumulative_saved, "\n",
   "*Cumulative Deficit:* KES ", total_missed, "\n",
   "*Progress:* ", percentage_target, "%\n\n",
-  "💡 *Motivation:* ", quote
+  "💡 *Motivation:* ", daily_quote
 )
 
 # When sending via telegram, make sure to set parse_mode = "MarkdownV2"
 
 
 send_telegram_message(BOT_TOKEN, CHAT_ID, daily_msg)
+
 
 
 
