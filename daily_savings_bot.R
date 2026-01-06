@@ -252,8 +252,8 @@ send_telegram_message <- function(text, chat_id = CHAT_ID, bot_token = BOT_TOKEN
 GSHEET_JSON_B64 <- Sys.getenv("GSHEET_JSON_B64")
 
 # Validate environment variables
-if (GSHEET_URL == "" || GSHEET_JSON_B64 == "") {
-  stop("❌ GSHEET_URL or GSHEET_JSON_B64 not set in environment")
+if (YOUR_GOOGLE_SHEET_URL == "" || GSHEET_JSON_B64 == "") {
+  stop("❌ YOUR_GOOGLE_SHEET_URL or GSHEET_JSON_B64 not set in environment")
 }
 
 # -------------------------------
@@ -277,7 +277,8 @@ sheet_id <- "SHEET_ID"
 # FIX ACTUALS (15/day increment)
 # -------------------------
 
-savings_data <- read_sheet(sheet_id) %>% mutate(date = as.Date(date)) %>% arrange(date)
+
+savings_data <- read_sheet(GSHEET_URL) %>% mutate(date = as.Date(date)) %>% arrange(date)
 
 
 savings_data <- savings_data %>%
@@ -403,6 +404,7 @@ if (today == ceiling_date(today, "month") - days(1)) {
   
   send_telegram_message(month_msg, photo = month_plot_file)
 }
+
 
 
 
