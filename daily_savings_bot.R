@@ -278,7 +278,7 @@ sheet_id <- "SHEET_ID"
 # -------------------------
 
 
-savings_data <- read_sheet(GSHEET_URL) %>% mutate(date = as.Date(date)) %>% arrange(date)
+savings_data <- read_sheet(YOUR_GOOGLE_SHEET_URL) %>% mutate(date = as.Date(date)) %>% arrange(date)
 
 
 savings_data <- savings_data %>%
@@ -404,6 +404,7 @@ if (today == ceiling_date(today, "month") - days(1)) {
   
   send_telegram_message(month_msg, photo = month_plot_file)
 }
+
 
 
 
