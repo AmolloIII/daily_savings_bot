@@ -2,7 +2,7 @@ name: Daily Savings Telegram Bot
 
 on:
   schedule:
-    # Runs every day at 7 PM Kenya time (16:00 UTC)
+    # 7 PM Kenya Time = 16:00 UTC
     - cron: '0 16 * * *'
 
 jobs:
@@ -16,7 +16,7 @@ jobs:
 
       - name: Install Packages
         run: |
-          R -e "install.packages(c('dplyr','lubridate','rvest','httr','stringr','ggplot2'))"
+          R -e "install.packages(c('dplyr','lubridate','rvest','httr','stringr','ggplot2','googlesheets4'))"
 
       - name: Run Daily Savings Bot
         run: Rscript daily_savings_bot.R
