@@ -488,7 +488,8 @@ escape_markdown_v2 <- function(text) {
 
 leoste <- corrected_savings %>%
   filter(date == Sys.Date()) %>%
-  pull(corrected_savings)
+  .[["corrected_savings"]]
+
 # -------------------------
 # DAILY MESSAGE
 # -------------------------
@@ -512,6 +513,7 @@ cat("Sending daily message...\n", "Preview:", substr(daily_msg_safe, 1, 100), "\
 
 
 send_telegram_message(BOT_TOKEN, CHAT_ID, daily_msg_safe, parse_mode = "MarkdownV2")
+
 
 
 
