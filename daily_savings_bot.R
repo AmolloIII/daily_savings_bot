@@ -342,28 +342,7 @@ week_end <- ceiling_date(today, unit = "week") - 1 # Sunday
 weekly_data <- savings_data %>%
   filter(date >= week_start & date <= week_end)
 
-if(wday(today) == 1){ # Sunday
-  total_saved <- sum(weekly_data$actual, na.rm = TRUE)
-  days_saved <- sum(weekly_data$status == "Saved", na.rm = TRUE)
-  
-  # Plot weekly savings
-  library(ggplot2)
-  png("weekly_chart.png", width = 800, height = 600)
-  ggplot(weekly_data, aes(x=date, y=actual)) +
-    geom_col(fill="steelblue") +
-    geom_text(aes(label=actual), vjust=-0.5) +
-    labs(title=paste0("Weekly Savings: ", week_start, " to ", week_end),
-         x="Date", y="Amount Saved (KES)") +
-    theme_minimal()
-  dev.off()
-  
-  caption <- paste0("📊 Weekly Savings Summary\nTotal Saved: KES ", total_saved, 
-                    "\nDays Saved: ", days_saved, "/", nrow(weekly_data),
-                    "\n\n",   # <- two newlines for a blank line
-                    daily_quote)
-  
-  send_telegram_photo(BOT_TOKEN, CHAT_ID, "weekly_chart.png", caption)
-}
+
 
 ########## Monthly summary (last day of month) ##########
 
@@ -373,26 +352,6 @@ month_end <- ceiling_date(today, "month") - 1
 monthly_data <- savings_data %>%
   filter(date >= month_start & date <= month_end)
 
-if(today == month_end){
-  total_saved <- sum(monthly_data$actual, na.rm = TRUE)
-  days_saved <- sum(monthly_data$status == "Saved", na.rm = TRUE)
-  
-  png("monthly_chart.png", width = 800, height = 600)
-  ggplot(monthly_data, aes(x=date, y=actual)) +
-    geom_col(fill="darkgreen") +
-    geom_line(aes(y=cumsum(actual)), color="blue", size=1) +
-    labs(title=paste0("Monthly Savings: ", month_start, " to ", month_end),
-         x="Date", y="Amount Saved (KES)") +
-    theme_minimal()
-  dev.off()
-  
-  caption <- paste0("📈 Monthly Savings Summary\nTotal Saved: KES ", total_saved,
-                    "\nDays Saved: ", days_saved, "/", nrow(monthly_data),
-                    "\n\n",   # <- two newlines for a blank line
-                    daily_quote)
-  
-  send_telegram_photo(BOT_TOKEN, CHAT_ID, "monthly_chart.png", caption)
-}
 
 # -------------------------
 # DAILY MESSAGE
@@ -426,26 +385,107 @@ total_missed <- corrected_savings %>%
   summarise(total_missed = sum(correct_actual)) %>%
   pull(total_missed)
 
-# Using MarkdownV2 formatting
+
+
+
+
+
+# -------------------------
+# WEEKLY MESSAGE (Sundays)
+# -------------------------
+if (wday(today) == 1) { # Sunday
+  total_saved <- sum(weekly_data$actual, na.rm = TRUE)
+  days_saved <- sum(weekly_data$status == "Saved", na.rm = TRUE)
+  
+  # Plot weekly savings
+  library(ggplot2)
+  weekly_chart_file <- "weekly_chart.png"
+  png(weekly_chart_file, width = 800, height = 600)
+  ggplot(weekly_data, aes(x = date, y = actual)) +
+    geom_col(fill = "steelblue") +
+    geom_text(aes(label = actual), vjust = -0.5) +
+    labs(title = paste0("Weekly Savings: ", week_start, " to ", week_end),
+         x = "Date", y = "Amount Saved (KES)") +
+    theme_minimal()
+  dev.off()
+  
+  # Prepare caption
+  daily_quote_safe <- as.character(daily_quote)
+  caption <- paste0(
+    "📊 Weekly Savings Summary\n",
+    "Total Saved: KES ", total_saved, "\n",
+    "Days Saved: ", days_saved, "/", nrow(weekly_data), "\n\n",
+    daily_quote_safe
+  )
+  caption_safe <- URLencode(as.character(caption))
+  
+  # Debug print
+  cat("Sending weekly chart...\n", "Caption preview:", substr(caption_safe, 1, 100), "\n")
+  
+  # Send photo safely
+  if (file.exists(weekly_chart_file)) {
+    send_telegram_photo(BOT_TOKEN, CHAT_ID, weekly_chart_file, caption_safe)
+  } else {
+    warning("Weekly chart file not found!")
+  }
+}
+
+# -------------------------
+# MONTHLY MESSAGE (Month-end)
+# -------------------------
+if (today == month_end) {
+  total_saved <- sum(monthly_data$actual, na.rm = TRUE)
+  days_saved <- sum(monthly_data$status == "Saved", na.rm = TRUE)
+  
+  monthly_chart_file <- "monthly_chart.png"
+  png(monthly_chart_file, width = 800, height = 600)
+  ggplot(monthly_data, aes(x = date, y = actual)) +
+    geom_col(fill = "darkgreen") +
+    geom_line(aes(y = cumsum(actual)), color = "blue", size = 1) +
+    labs(title = paste0("Monthly Savings: ", month_start, " to ", month_end),
+         x = "Date", y = "Amount Saved (KES)") +
+    theme_minimal()
+  dev.off()
+  
+  daily_quote_safe <- as.character(daily_quote)
+  caption <- paste0(
+    "📈 Monthly Savings Summary\n",
+    "Total Saved: KES ", total_saved, "\n",
+    "Days Saved: ", days_saved, "/", nrow(monthly_data), "\n\n",
+    daily_quote_safe
+  )
+  caption_safe <- URLencode(as.character(caption))
+  
+  cat("Sending monthly chart...\n", "Caption preview:", substr(caption_safe, 1, 100), "\n")
+  
+  if (file.exists(monthly_chart_file)) {
+    send_telegram_photo(BOT_TOKEN, CHAT_ID, monthly_chart_file, caption_safe)
+  } else {
+    warning("Monthly chart file not found!")
+  }
+}
+
+# -------------------------
+# DAILY MESSAGE
+# -------------------------
 daily_msg <- paste0(
-  "*🕖 DAILY SAVINGS UPDATE*\n\n",           # bold heading, extra newline for spacing
+  "*🕖 DAILY SAVINGS UPDATE*\n\n",
   "*Day:* ", day(today), " of ", month(today, label = TRUE, abbr = FALSE), "\n",
   "*Today's Target:* KES ", leoste, "\n",
   "*Cumulative Saved:* KES ", cumulative_saved, "\n",
   "*Cumulative Deficit:* KES ", total_missed, "\n",
   "*Progress:* ", percentage_target, "%\n\n",
-  "💡 *Motivation:* ", daily_quote
+  "💡 *Motivation:* ", as.character(daily_quote)
 )
 
-# When sending via telegram, make sure to set parse_mode = "MarkdownV2"
-daily_msg <- as.character(daily_msg)
+# Ensure message is character and URL-safe
+daily_msg_safe <- URLencode(as.character(daily_msg))
 
+# Debug print
+cat("Sending daily message...\n", "Preview:", substr(daily_msg_safe, 1, 100), "\n")
 
-send_telegram_message(BOT_TOKEN, CHAT_ID, daily_msg)
-
-
-
-
+# Send
+send_telegram_message(BOT_TOKEN, CHAT_ID, daily_msg_safe, parse_mode = "MarkdownV2")
 
 
 
