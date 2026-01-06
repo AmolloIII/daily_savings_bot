@@ -39,4 +39,5 @@ jobs:
           BOT_TOKEN: ${{ secrets.BOT_TOKEN }}
           CHAT_ID: ${{ secrets.CHAT_ID }}
           GSHEET_JSON: ${{ secrets.GSHEET_JSON }}
+          SHEET_ID: ${{ secrets.SHEET_ID }}
 
