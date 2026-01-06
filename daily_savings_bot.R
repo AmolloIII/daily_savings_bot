@@ -241,14 +241,36 @@ send_telegram_message <- function(text, chat_id = CHAT_ID, bot_token = BOT_TOKEN
 # GOOGLE SHEETS AUTH
 # -------------------------
 
-if (file.exists("GSHEET_JSON")) {
-  gs4_auth(path = "GSHEET_JSON")
-  gs_connected <- TRUE
-} else {
-  gs_connected <- FALSE
-  warning("⚠️ Google Sheets not connected. Data will not be saved.")
+#if (file.exists("GSHEET_JSON")) {
+#  gs4_auth(path = "GSHEET_JSON")
+#  gs_connected <- TRUE
+#} else {
+#  gs_connected <- FALSE
+#  warning("⚠️ Google Sheets not connected. Data will not be saved.")
+#}
+
+GSHEET_JSON_B64 <- Sys.getenv("GSHEET_JSON_B64")
+
+# Validate environment variables
+if (GSHEET_URL == "" || GSHEET_JSON_B64 == "") {
+  stop("❌ GSHEET_URL or GSHEET_JSON_B64 not set in environment")
 }
 
+# -------------------------------
+# 3. Decode Google JSON
+# -------------------------------
+writeLines(rawToChar(base64enc::base64decode(GSHEET_JSON_B64)), "gs.json")
+Sys.chmod("gs.json", mode = "600")
+
+# -------------------------------
+# 4. Authenticate Google Sheets
+# -------------------------------
+gs4_auth(
+  path = "gs.json",
+  scopes = "https://www.googleapis.com/auth/spreadsheets.readonly",
+  cache = FALSE
+)
+message("✅ Google Sheets authenticated")
 # Define Google Sheet ID (replace with your actual sheet ID)
 sheet_id <- "SHEET_ID"
 # -------------------------
@@ -381,6 +403,7 @@ if (today == ceiling_date(today, "month") - days(1)) {
   
   send_telegram_message(month_msg, photo = month_plot_file)
 }
+
 
 
 
