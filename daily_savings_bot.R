@@ -302,14 +302,27 @@ percentage_target <- round(cumulative_saved / yearly_target * 100, 1)
 # -------------------------
 # LAST TWO DAYS MISSED
 # -------------------------
-last_two_days <- savings_data %>%
-  filter(date %in% (today - 1:2) & status == "Missed") %>%
-  pull(date) %>%
-  format("%Y-%m-%d")
-missed_msg <- if(length(last_two_days) > 0) {
-  paste0("⚠️ Reminder: You have missed savings for the last two days (", paste(last_two_days, collapse=", "), "). Don't break the streak!\n\n")
-} else { "" }
+today <- Sys.Date()
+last_two_days <- today - c(1,2)
 
+last_two_days_chr <- format(as.Date(last_two_days), "%Y-%m-%d")
+
+
+missed_days <- savings_data %>%
+  filter(date %in% last_two_days & status == "Missed")
+
+if (nrow(missed_days) == 2) {
+  
+  msg <- paste0(
+    "⚠️ Reminder: You have missed savings for the last two days (",
+    paste(last_two_days_chr, collapse = ", "),
+    "). Don't break the streak!",
+    "\n\n",
+    quote
+  )
+  
+  send_telegram_message(BOT_TOKEN, CHAT_ID, msg)
+}
 # -------------------------
 # RANDOM QUOTE
 # -------------------------
@@ -446,6 +459,7 @@ daily_msg <- paste0(
 
 
 send_telegram_message(BOT_TOKEN, CHAT_ID, daily_msg)
+
 
 
 
