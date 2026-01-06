@@ -1,0 +1,25 @@
+name: Daily Savings Telegram Bot
+
+on:
+  schedule:
+    # Runs every day at 7 PM Kenya time (16:00 UTC)
+    - cron: '0 16 * * *'
+
+jobs:
+  telegram:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v3
+
+      - name: Setup R
+        uses: r-lib/actions/setup-r@v2
+
+      - name: Install Packages
+        run: |
+          R -e "install.packages(c('dplyr','lubridate','rvest','httr','stringr','ggplot2'))"
+
+      - name: Run Daily Savings Bot
+        run: Rscript daily_savings_bot.R
+        env:
+          BOT_TOKEN: ${{ secrets.BOT_TOKEN }}
+          CHAT_ID: ${{ secrets.CHAT_ID }}
