@@ -246,8 +246,7 @@ if (file.exists("GSHEET_JSON")) {
   gs_connected <- TRUE
 } else {
   gs_connected <- FALSE
-  showNotification("Google Sheets not connected. Data will not be saved.", 
-                   type = "warning", duration = 5)
+  warning("⚠️ Google Sheets not connected. Data will not be saved.")
 }
 
 # Define Google Sheet ID (replace with your actual sheet ID)
@@ -382,5 +381,6 @@ if (today == ceiling_date(today, "month") - days(1)) {
   
   send_telegram_message(month_msg, photo = month_plot_file)
 }
+
 
 
