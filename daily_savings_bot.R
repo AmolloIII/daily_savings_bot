@@ -235,6 +235,28 @@ send_telegram_message <- function(text, chat_id = CHAT_ID, bot_token = BOT_TOKEN
 # -------------------------
 # CONFIG: Google Sheet
 # -------------------------
+# Read JSON from environment variable
+gjson <- Sys.getenv("GSHEET_JSON")
+
+if (gjson != "") {
+  # Write JSON to a temp file
+  json_file <- tempfile(fileext = ".json")
+  writeLines(gjson, con = json_file)
+  
+  # Authenticate with gs4
+  gs4_auth(path = json_file)
+  gs_connected <- TRUE
+} else {
+  gs_connected <- FALSE
+  message("Google Sheets not connected. Data will not be saved.")
+}
+
+# Now you can read your sheet
+if (gs_connected) {
+  savings_data <- read_sheet("YOUR_GOOGLE_SHEET_URL") %>%
+    mutate(date = as.Date(date))
+}
+
 sheet_url <- "YOUR_GOOGLE_SHEET_URL"  # replace with your sheet
 savings_data <- read_sheet(sheet_url) %>% mutate(date = as.Date(date)) %>% arrange(date)
 
@@ -367,4 +389,5 @@ if (today == ceiling_date(today, "month") - days(1)) {
   
   send_telegram_message(month_msg, photo = month_plot_file)
 }
+
 
