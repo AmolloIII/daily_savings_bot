@@ -470,6 +470,21 @@ if (today == month_end) {
   }
 }
 
+
+escape_markdown_v2 <- function(text) {
+  # List of characters to escape
+  specials <- c("_", "*", "[", "]", "(", ")", "~", "`", ">", "#", "+", "-", "=", "|", "{", "}", ".", "!")
+  
+  for (s in specials) {
+    text <- gsub(s, paste0("\\", s), text, fixed = TRUE)
+  }
+  
+  # Also escape %
+  text <- gsub("%", "\\%", text, fixed = TRUE)
+  
+  return(text)
+}
+
 # -------------------------
 # DAILY MESSAGE
 # -------------------------
@@ -484,13 +499,16 @@ daily_msg <- paste0(
 )
 
 # Ensure message is character and URL-safe
-daily_msg_safe <- URLencode(as.character(daily_msg))
+daily_msg_safe <- escape_markdown_v2(daily_msg)
 
 # Debug print
 cat("Sending daily message...\n", "Preview:", substr(daily_msg_safe, 1, 100), "\n")
 
 # Send
+
+
 send_telegram_message(BOT_TOKEN, CHAT_ID, daily_msg_safe, parse_mode = "MarkdownV2")
+
 
 
 
