@@ -329,7 +329,7 @@ if (nrow(missed_days) == 2) {
     "\n\n",
     daily_quote
   )
-  
+  msg <- as.character(msg)
   send_telegram_message(BOT_TOKEN, CHAT_ID, msg)
 }
 
@@ -439,9 +439,11 @@ daily_msg <- paste0(
 )
 
 # When sending via telegram, make sure to set parse_mode = "MarkdownV2"
+daily_msg <- as.character(daily_msg)
 
 
 send_telegram_message(BOT_TOKEN, CHAT_ID, daily_msg)
+
 
 
 
