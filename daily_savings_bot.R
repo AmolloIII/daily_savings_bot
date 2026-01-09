@@ -526,6 +526,8 @@ send_telegram_message(BOT_TOKEN, CHAT_ID, daily_msg_safe, parse_mode = "Markdown
 ## With exact payment matching and pending amount calculation
 ############################################
 # -------- TELEGRAM ------------------------
+SHEET_URL_Z <- Sys.getenv("SHEET_URL_Z")
+
 tg_post <- function(method, body) {
   response <- POST(
     paste0("https://api.telegram.org/bot", BOT_TOKEN, "/", method),
@@ -1136,6 +1138,7 @@ check_data_consistency <- function() {
 
 # Then send the reminder
 send_financial_reminder()
+
 
 
 
