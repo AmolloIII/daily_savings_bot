@@ -48,4 +48,5 @@ jobs:
           SHEET_ID: ${{ secrets.SHEET_ID }}
           GSHEET_JSON_B64: ${{ secrets.GSHEET_JSON_B64 }}
           YOUR_GOOGLE_SHEET_URL: ${{ secrets.YOUR_GOOGLE_SHEET_URL }}
+          SHEET_URL_Z: ${{ secrets.SHEET_URL_Z }}
 
