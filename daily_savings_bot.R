@@ -8,6 +8,9 @@ library(lubridate)
 library(ggplot2)
 library(httr)
 library(stringr)
+library(httr)
+library(jsonlite)
+
 
 
 text <- "Are you ready to enhance your understanding of money and its impact on your life?
@@ -518,6 +521,621 @@ send_telegram_message(BOT_TOKEN, CHAT_ID, daily_msg_safe, parse_mode = "Markdown
 
 
 
+############################################
+## ENHANCED TELEGRAM FINANCIAL REMINDER
+## With exact payment matching and pending amount calculation
+############################################
+# -------- TELEGRAM ------------------------
+tg_post <- function(method, body) {
+  response <- POST(
+    paste0("https://api.telegram.org/bot", BOT_TOKEN, "/", method),
+    body = body,
+    encode = "json"
+  )
+  return(response)
+}
+
+send_message <- function(text) {
+  body <- list(
+    chat_id = CHAT_ID,
+    text = text,
+    parse_mode = "HTML"
+  )
+  tg_post("sendMessage", body)
+}
+
+# -------- DATA ----------------------------
+read_bills <- function() {
+  cat("📊 Reading bills data...\n")
+  bills <- read_sheet(SHEET_URL_Z, sheet = "bills")
+  
+  bills <- bills %>%
+    mutate(
+      due_date = as.Date(due_date),
+      amount = as.numeric(amount),
+      due_in_days = as.numeric(due_date - Sys.Date())
+    ) %>%
+    arrange(due_date)
+  
+  cat("✅ Bills loaded:", nrow(bills), "records\n")
+  return(bills)
+}
+
+read_payments <- function() {
+  cat("💰 Reading payments data...\n")
+  tryCatch({
+    payments <- read_sheet(SHEET_URL_Z, sheet = "payments")
+    
+    if(nrow(payments) == 0) {
+      cat("⚠️ No payments data found\n")
+      return(data.frame(
+        bill_id = character(), 
+        name = character(), 
+        amount = numeric(), 
+        paid_on = as.Date(character()), 
+        method = character()
+      ))
+    }
+    
+    payments <- payments %>%
+      mutate(
+        paid_on = as.Date(paid_on),
+        amount = as.numeric(amount)
+      )
+    
+    cat("✅ Payments loaded:", nrow(payments), "records\n")
+    return(payments)
+  }, error = function(e) {
+    cat("⚠️ Could not read payments sheet:", e$message, "\n")
+    return(data.frame(
+      bill_id = character(), 
+      name = character(), 
+      amount = numeric(), 
+      paid_on = as.Date(character()), 
+      method = character()
+    ))
+  })
+}
+
+read_goals <- function() {
+  cat("🎯 Reading goals data...\n")
+  goals <- read_sheet(SHEET_URL_Z, sheet = "goals")
+  
+  goals <- goals %>%
+    mutate(
+      target_date = as.Date(target_date),
+      target_amount = as.numeric(target_amount),
+      current_amount = as.numeric(current_amount),
+      progress_pct = round(current_amount / target_amount * 100, 1),
+      amount_left = target_amount - current_amount,
+      daily_required = ifelse(
+        as.numeric(target_date - Sys.Date()) > 0,
+        amount_left / as.numeric(target_date - Sys.Date()),
+        NA
+      )
+    )
+  
+  cat("✅ Goals loaded:", nrow(goals), "records\n")
+  return(goals)
+}
+
+# -------- PAYMENT MATCHING LOGIC ----------
+match_payments_to_bills <- function(bills, payments) {
+  cat("🔍 Matching payments to bills...\n")
+  
+  if(nrow(payments) == 0) {
+    bills$total_paid <- 0
+    bills$pending_amount <- bills$amount
+    bills$payment_status <- "unpaid"
+    bills$last_payment_date <- NA
+    bills$payment_method <- NA
+    return(bills)
+  }
+  
+  # First, try to match by bill_id (exact match)
+  payments_by_id <- payments %>%
+    group_by(bill_id) %>%
+    summarise(
+      total_paid = sum(amount, na.rm = TRUE),
+      last_payment_date = max(paid_on, na.rm = TRUE),
+      payment_method = paste(unique(method[!is.na(method)]), collapse = ", "),
+      .groups = "drop"
+    ) %>%
+    rename(id = bill_id)
+  
+  # Second, try to match by name (if no id match)
+  payments_by_name <- payments %>%
+    group_by(name) %>%
+    summarise(
+      total_paid_name = sum(amount, na.rm = TRUE),
+      last_payment_date_name = max(paid_on, na.rm = TRUE),
+      payment_method_name = paste(unique(method[!is.na(method)]), collapse = ", "),
+      .groups = "drop"
+    )
+  
+  # Join payments to bills
+  bills <- bills %>%
+    left_join(payments_by_id, by = "id") %>%
+    left_join(payments_by_name, by = "name") %>%
+    mutate(
+      # Use id-based payment if available, otherwise use name-based
+      total_paid = coalesce(total_paid, total_paid_name, 0),
+      last_payment_date = coalesce(last_payment_date, last_payment_date_name),
+      payment_method = coalesce(payment_method, payment_method_name),
+      # Remove temporary columns
+      total_paid_name = NULL,
+      last_payment_date_name = NULL,
+      payment_method_name = NULL,
+      # Calculate pending amount
+      pending_amount = pmax(amount - total_paid, 0),
+      # Determine payment status
+      payment_status = case_when(
+        total_paid >= amount * 0.99 ~ "paid",  # 99% threshold to account for rounding
+        total_paid > 0 & total_paid < amount ~ "partial",
+        total_paid == 0 ~ "unpaid",
+        TRUE ~ "unknown"
+      ),
+      # Check if payment was made on time (before or on due date)
+      paid_on_time = ifelse(
+        !is.na(last_payment_date) & last_payment_date <= due_date,
+        TRUE,
+        FALSE
+      )
+    )
+  
+  # Show matching summary
+  paid_count <- sum(bills$payment_status == "paid", na.rm = TRUE)
+  partial_count <- sum(bills$payment_status == "partial", na.rm = TRUE)
+  unpaid_count <- sum(bills$payment_status == "unpaid", na.rm = TRUE)
+  
+  cat("📋 Payment Matching Summary:\n")
+  cat("   ✅ Paid:", paid_count, "bills\n")
+  cat("   🔄 Partial:", partial_count, "bills\n")
+  cat("   ❌ Unpaid:", unpaid_count, "bills\n")
+  
+  return(bills)
+}
+
+# -------- FORMATTING HELPERS --------------
+format_currency <- function(amount) {
+  if (is.na(amount) || amount == 0) return("KES 0")
+  paste0("KES ", format(round(amount, 2), big.mark = ",", nsmall = 2))
+}
+
+get_urgency_icon <- function(days_left, is_paid = FALSE, is_partial = FALSE) {
+  if(is_paid) return("✅")
+  if(is_partial) return("🔄")
+  if (is.na(days_left) || days_left < 0) return("🔴")  # Overdue
+  if (days_left == 0) return("🟠")  # Today
+  if (days_left <= 3) return("🟡")  # 1-3 days
+  if (days_left <= 7) return("🟢")  # 4-7 days
+  return("⚪")  # More than 7 days
+}
+
+create_progress_bar <- function(percentage, width = 10) {
+  if (is.na(percentage)) percentage <- 0
+  filled <- round(width * percentage / 100)
+  empty <- width - filled
+  bar <- paste0(
+    "<code>[",
+    strrep("█", filled),
+    strrep("░", empty),
+    "]</code> ",
+    round(percentage, 1), "%"
+  )
+  return(bar)
+}
+
+format_date_display <- function(date) {
+  if (is.na(date)) return("No date")
+  
+  today <- Sys.Date()
+  days_diff <- as.numeric(date - today)
+  
+  if (days_diff == 0) return("<b>Today</b>")
+  if (days_diff == 1) return("<b>Tomorrow</b>")
+  if (days_diff < 0) return(paste0("<b>Overdue by ", abs(days_diff), " days</b>"))
+  if (days_diff <= 7) return(paste0("In <b>", days_diff, " days</b>"))
+  
+  return(format(date, "%b %d, %Y"))
+}
+
+# -------- MESSAGE SECTIONS -----------------
+create_unpaid_bills_section <- function(bills) {
+  unpaid_bills <- bills %>% 
+    filter(pending_amount > 0) %>%
+    filter(!is.na(name) & !is.na(amount)) %>%
+    arrange(due_date)
+  
+  if (nrow(unpaid_bills) == 0) {
+    return(paste0(
+      "<b>📋 PENDING BILLS</b>\n",
+      "✅ All bills are paid! 🎉\n\n"
+    ))
+  }
+  
+  section_text <- "<b>📋 PENDING BILLS</b>\n"
+  
+  for (i in 1:nrow(unpaid_bills)) {
+    bill <- unpaid_bills[i, ]
+    is_partial <- bill$payment_status == "partial"
+    
+    section_text <- paste0(
+      section_text,
+      get_urgency_icon(bill$due_in_days, FALSE, is_partial), " ",
+      "<b>", bill$name, "</b>\n",
+      "   Original: ", format_currency(bill$amount), "\n",
+      "   Due: ", format_date_display(bill$due_date), "\n"
+    )
+    
+    if (is_partial) {
+      section_text <- paste0(
+        section_text,
+        "   Paid: ", format_currency(bill$total_paid), "\n",
+        "   Pending: ", format_currency(bill$pending_amount), "\n"
+      )
+    } else {
+      section_text <- paste0(
+        section_text,
+        "   Pending: ", format_currency(bill$pending_amount), "\n"
+      )
+    }
+    
+    if ("recurring" %in% colnames(bill) && !is.na(bill$recurring) && bill$recurring != "") {
+      section_text <- paste0(section_text, "   🔄 ", bill$recurring, "\n")
+    }
+    
+    section_text <- paste0(section_text, "\n")
+  }
+  
+  return(section_text)
+}
+
+create_paid_bills_summary <- function(bills) {
+  paid_bills <- bills %>% 
+    filter(payment_status == "paid") %>%
+    filter(!is.na(name) & !is.na(amount))
+  
+  if (nrow(paid_bills) == 0) {
+    return("")
+  }
+  
+  total_paid <- sum(paid_bills$amount, na.rm = TRUE)
+  recent_paid <- paid_bills %>%
+    filter(!is.na(last_payment_date)) %>%
+    arrange(desc(last_payment_date)) %>%
+    head(3)
+  
+  section_text <- paste0(
+    "<b>✅ RECENTLY PAID BILLS</b>\n",
+    "Total paid: ", format_currency(total_paid), "\n\n"
+  )
+  
+  for (i in 1:nrow(recent_paid)) {
+    bill <- recent_paid[i, ]
+    section_text <- paste0(
+      section_text,
+      "• <b>", bill$name, "</b>\n",
+      "  Amount: ", format_currency(bill$amount), "\n",
+      "  Paid on: ", format(bill$last_payment_date, "%b %d"), "\n"
+    )
+    
+    if (!is.na(bill$payment_method) && bill$payment_method != "") {
+      section_text <- paste0(section_text, "  Method: ", bill$payment_method, "\n")
+    }
+    
+    section_text <- paste0(section_text, "\n")
+  }
+  
+  return(paste0(section_text, "\n"))
+}
+
+create_debts_section <- function(bills) {
+  # Get debts (bills with direction)
+  owe_bills <- bills %>% 
+    filter(direction == "owe" & pending_amount > 0) %>%
+    filter(!is.na(name) & !is.na(amount))
+  
+  owed_bills <- bills %>% 
+    filter(direction == "owed_to_me" & pending_amount > 0) %>%
+    filter(!is.na(name) & !is.na(amount))
+  
+  section_text <- ""
+  
+  # You owe to others
+  if (nrow(owe_bills) > 0) {
+    total_pending <- sum(owe_bills$pending_amount, na.rm = TRUE)
+    section_text <- paste0(
+      section_text,
+      "<b>💸 YOU OWE TO OTHERS</b>\n",
+      "Total pending: ", format_currency(total_pending), "\n\n"
+    )
+    
+    for (i in 1:min(5, nrow(owe_bills))) {
+      bill <- owe_bills[i, ]
+      section_text <- paste0(
+        section_text,
+        "• ", get_urgency_icon(bill$due_in_days, bill$payment_status == "paid"), " ",
+        "<b>", bill$name, "</b>\n",
+        "  Pending: ", format_currency(bill$pending_amount), "\n",
+        "  Due: ", format_date_display(bill$due_date), "\n\n"
+      )
+    }
+    
+    if (nrow(owe_bills) > 5) {
+      section_text <- paste0(section_text, 
+                             "  ... and <b>", nrow(owe_bills) - 5, " more</b>\n\n")
+    }
+  }
+  
+  # Owed to you
+  if (nrow(owed_bills) > 0) {
+    total_pending <- sum(owed_bills$pending_amount, na.rm = TRUE)
+    section_text <- paste0(
+      section_text,
+      "<b>💰 OWED TO YOU</b>\n",
+      "Total pending: ", format_currency(total_pending), "\n\n"
+    )
+    
+    for (i in 1:min(5, nrow(owed_bills))) {
+      bill <- owed_bills[i, ]
+      section_text <- paste0(
+        section_text,
+        "• ", get_urgency_icon(bill$due_in_days, bill$payment_status == "paid"), " ",
+        "<b>", bill$name, "</b>\n",
+        "  Pending: ", format_currency(bill$pending_amount), "\n",
+        "  Due: ", format_date_display(bill$due_date), "\n\n"
+      )
+    }
+    
+    if (nrow(owed_bills) > 5) {
+      section_text <- paste0(section_text, 
+                             "  ... and <b>", nrow(owed_bills) - 5, " more</b>\n\n")
+    }
+  }
+  
+  if (section_text == "") {
+    return(paste0(
+      "<b>🤝 DEBTS</b>\n",
+      "✅ All settled up! 🎉\n\n"
+    ))
+  }
+  
+  return(section_text)
+}
+
+create_goals_section <- function(goals) {
+  active_goals <- goals %>% 
+    filter(status == "ongoing" | is.na(status)) %>%
+    arrange(target_date)
+  
+  if (nrow(active_goals) == 0) {
+    return(paste0(
+      "<b>🎯 FINANCIAL GOALS</b>\n",
+      "No active goals set\n\n"
+    ))
+  }
+  
+  section_text <- "<b>🎯 FINANCIAL GOALS</b>\n"
+  
+  for (i in 1:nrow(active_goals)) {
+    goal <- active_goals[i, ]
+    
+    section_text <- paste0(
+      section_text,
+      "\n<b>", goal$goal_name, "</b>\n",
+      create_progress_bar(goal$progress_pct), "\n",
+      format_currency(goal$current_amount), " / ", 
+      format_currency(goal$target_amount), "\n",
+      "📅 ", format_date_display(goal$target_date), "\n"
+    )
+    
+    # Add daily required amount if not too close to deadline
+    if (!is.na(goal$daily_required) && goal$daily_required > 0 && 
+        goal$progress_pct < 100 && as.numeric(goal$target_date - Sys.Date()) > 0) {
+      section_text <- paste0(
+        section_text,
+        "📈 Daily target: ", format_currency(goal$daily_required), "\n"
+      )
+    }
+  }
+  
+  return(paste0(section_text, "\n"))
+}
+
+create_summary_section <- function(bills, goals) {
+  # Calculate totals based on pending amounts
+  total_pending <- sum(bills$pending_amount, na.rm = TRUE)
+  
+  total_paid_bills <- bills %>% 
+    filter(payment_status == "paid") %>%
+    summarise(total = sum(amount, na.rm = TRUE)) %>% 
+    pull(total)
+  
+  total_partial_bills <- bills %>% 
+    filter(payment_status == "partial") %>%
+    summarise(total = sum(pending_amount, na.rm = TRUE)) %>% 
+    pull(total)
+  
+  total_pending_owe <- bills %>% 
+    filter(direction == "owe") %>%
+    summarise(total = sum(pending_amount, na.rm = TRUE)) %>% 
+    pull(total)
+  
+  total_pending_owed <- bills %>% 
+    filter(direction == "owed_to_me") %>%
+    summarise(total = sum(pending_amount, na.rm = TRUE)) %>% 
+    pull(total)
+  
+  total_goals <- goals %>% 
+    filter(status == "ongoing" | is.na(status)) %>% 
+    summarise(
+      current = sum(current_amount, na.rm = TRUE),
+      target = sum(target_amount, na.rm = TRUE)
+    )
+  
+  net_position <- total_pending_owed - total_pending_owe
+  
+  # Get urgent bills (due within 7 days or overdue)
+  urgent_bills <- bills %>% 
+    filter((due_in_days <= 7 & due_in_days >= 0) | due_in_days < 0) %>%
+    filter(!is.na(pending_amount) & pending_amount > 0)
+  
+  urgent_count <- nrow(urgent_bills)
+  urgent_total <- sum(urgent_bills$pending_amount, na.rm = TRUE)
+  
+  summary_text <- paste0(
+    "<b>📊 FINANCIAL SUMMARY</b>\n",
+    "┌────────────────────────────┐\n",
+    "│ Payment Status             │\n",
+    "│ • Paid: ", format_currency(total_paid_bills), "\n",
+    "│ • Pending: ", format_currency(total_pending), "\n",
+    "│ • Partial: ", format_currency(total_partial_bills), "\n",
+    "└────────────────────────────┘\n\n"
+  )
+  
+  # Add urgent notice if needed
+  if (urgent_count > 0) {
+    summary_text <- paste0(
+      "<b>⚠️  URGENT NOTICE</b>\n",
+      "You have <b>", urgent_count, "</b> bill(s) due within 7 days\n",
+      "Total urgent amount: <b>", format_currency(urgent_total), "</b>\n\n",
+      summary_text
+    )
+  }
+  
+  return(summary_text)
+}
+
+# -------- MAIN FUNCTION -------------------
+send_financial_reminder <- function() {
+  tryCatch({
+    # Read all data
+    cat("📊 Reading data from Google Sheets...\n")
+    bills <- read_bills()
+    payments <- read_payments()
+    goals <- read_goals()
+    
+    # Match payments to bills
+    bills <- match_payments_to_bills(bills, payments)
+    
+    # Show summary of what was found
+    cat("\n📋 BILLS STATUS SUMMARY:\n")
+    cat("   Total bills:", nrow(bills), "\n")
+    cat("   Fully paid:", sum(bills$payment_status == "paid", na.rm = TRUE), "\n")
+    cat("   Partially paid:", sum(bills$payment_status == "partial", na.rm = TRUE), "\n")
+    cat("   Unpaid:", sum(bills$payment_status == "unpaid", na.rm = TRUE), "\n")
+    cat("   Total pending amount:", format_currency(sum(bills$pending_amount, na.rm = TRUE)), "\n")
+    
+    # Build message
+    message <- paste0(
+      "<b>💳 FINANCIAL OVERVIEW</b>\n",
+      "<i>", format(Sys.Date(), "%A, %B %d, %Y"), "</i>\n",
+      strrep("─", 35), "\n\n",
+      
+      create_unpaid_bills_section(bills),
+      create_paid_bills_summary(bills),
+      create_debts_section(bills),
+      create_goals_section(goals),
+      create_summary_section(bills, goals),
+      
+      
+      "<i>📅 Next update: ", format(Sys.Date() + 1, "%b %d"), "</i>"
+    )
+    
+    # Send main message
+    cat("📤 Sending message to Telegram...\n")
+    send_message(message)
+    
+    # Send urgent reminders separately if any
+    urgent_bills <- bills %>% 
+      filter((due_in_days <= 3 & due_in_days >= 0) | due_in_days < 0) %>%
+      filter(!is.na(name) & !is.na(pending_amount) & pending_amount > 0)
+    
+    if (nrow(urgent_bills) > 0) {
+      urgent_msg <- "<b>🚨 URGENT REMINDERS</b>\n\n"
+      for (i in 1:nrow(urgent_bills)) {
+        bill <- urgent_bills[i, ]
+        urgent_msg <- paste0(
+          urgent_msg,
+          "• <b>", bill$name, "</b>\n",
+          "  Pending: ", format_currency(bill$pending_amount), "\n",
+          "  Due: ", 
+          ifelse(bill$due_in_days < 0, 
+                 paste0("<b>OVERDUE by ", abs(bill$due_in_days), " days</b>"),
+                 ifelse(bill$due_in_days == 0, "<b>TODAY</b>", 
+                        paste("in <b>", bill$due_in_days, " days</b>"))),
+          "\n"
+        )
+        
+        if (bill$payment_status == "partial") {
+          urgent_msg <- paste0(urgent_msg,
+                               "  Already paid: ", format_currency(bill$total_paid), "\n")
+        }
+        
+        urgent_msg <- paste0(urgent_msg, "\n")
+      }
+      send_message(urgent_msg)
+      cat("⚠️ Sent urgent reminders:", nrow(urgent_bills), "bills\n")
+    }
+    
+    cat("✅ Financial reminder sent successfully!\n")
+    
+  }, error = function(e) {
+    error_msg <- paste0(
+      "❌ Error sending financial reminder:\n",
+      "<code>", e$message, "</code>\n\n",
+      "Please check your data structure and try again."
+    )
+    send_message(error_msg)
+    cat("❌ Error:", e$message, "\n")
+  })
+}
+
+# -------- DATA CONSISTENCY CHECK ----------
+check_data_consistency <- function() {
+  cat("🔍 Checking data consistency...\n")
+  
+  tryCatch({
+    bills <- read_bills()
+    payments <- read_payments()
+    
+    # Check for bills without matching payments
+    bills_with_payments <- match_payments_to_bills(bills, payments)
+    
+    unpaid_bills <- bills_with_payments %>%
+      filter(payment_status %in% c("unpaid", "partial")) %>%
+      select(id, name, amount, total_paid, pending_amount, due_date)
+    
+    cat("\n📊 UNPAID/UNDERPAID BILLS:\n")
+    if(nrow(unpaid_bills) > 0) {
+      print(unpaid_bills)
+    } else {
+      cat("   All bills are fully paid! 🎉\n")
+    }
+    
+    # Check for payments without matching bills
+    unmatched_payments <- payments %>%
+      filter(!bill_id %in% bills$id)
+    
+    cat("\n📊 PAYMENTS WITHOUT MATCHING BILLS:\n")
+    if(nrow(unmatched_payments) > 0) {
+      print(unmatched_payments)
+    } else {
+      cat("   All payments match a bill ID\n")
+    }
+    
+  }, error = function(e) {
+    cat("❌ Error checking consistency:", e$message, "\n")
+  })
+}
+
+# -------- RUN -----------------------------
+# First, check data consistency (optional)
+# check_data_consistency()
+
+# Then send the reminder
+send_financial_reminder()
 
 
 
