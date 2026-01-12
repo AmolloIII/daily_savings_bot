@@ -319,28 +319,37 @@ percentage_target <- round(cumulative_saved / yearly_target * 100, 1)
 # -------------------------
 # LAST TWO DAYS MISSED
 # -------------------------
-# Prepare safe strings
+########## Missed savings check (all past days) ##########
+
 today <- Sys.Date()
-last_two_days <- today - c(1,2)
-last_two_days_chr <- as.character(last_two_days)
-daily_quote <- as.character(daily_quote)
 
-msg <- paste0(
-  "⚠️ Reminder: You have missed savings for the last two days (",
-  paste(last_two_days_chr, collapse = ", "),
-  "). Don't break the streak!\n\n",
-  daily_quote
-)
-# URL-encode message
-msg_safe <- URLencode(msg)
+missed_days <- savings_data %>%
+  filter(
+    date < today,
+    status == "Missed"
+  ) %>%
+  arrange(date)
 
-# Print debug info
-cat("BOT_TOKEN length:", nchar(BOT_TOKEN), "\n")
-cat("CHAT_ID length:", nchar(CHAT_ID), "\n")
-cat("Message preview:", substr(msg_safe, 1, 100), "\n")
+if (nrow(missed_days) > 0) {
+  
+  missed_days_chr <- format(as.Date(missed_days$date), "%Y-%m-%d")
+  
+  msg <- paste0(
+    "⚠️ Savings Reminder\n\n",
+    "You have missed savings for the following *", nrow(missed_days), " day(s)*:\n",
+    paste(paste0("• ", missed_days_chr), collapse = "\n"),
+    "\n\nTotal missed days: *", nrow(missed_days), "*",
+    "\n\n👉 Take action now by visiting your dashboard:\n",
+    "https://kampspatial.shinyapps.io/BenQ_2026_DSPC/",
+    "\n\nLet’s get back on track 💪\n\n",
+    "*", daily_quote, "*"
+  )
+  
+  
+  send_telegram_message(BOT_TOKEN, CHAT_ID, msg)
+}
 
-# Send
-send_telegram_message(BOT_TOKEN, CHAT_ID, msg_safe)
+
 
 ########## Weekly summary (every Sunday) ##########
 
@@ -1138,6 +1147,7 @@ check_data_consistency <- function() {
 
 # Then send the reminder
 send_financial_reminder()
+
 
 
 
