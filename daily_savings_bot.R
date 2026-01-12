@@ -530,6 +530,42 @@ send_telegram_message(BOT_TOKEN, CHAT_ID, daily_msg_safe, parse_mode = "Markdown
 
 
 
+
+send_message_buttons <- function(text, buttons) {
+  
+  body <- list(
+    chat_id = CHAT_ID,
+    text = text,
+    parse_mode = "HTML",
+    reply_markup = list(
+      inline_keyboard = buttons
+    )
+  )
+  
+  httr::POST(
+    paste0("https://api.telegram.org/bot", BOT_TOKEN, "/sendMessage"),
+    body = body,
+    encode = "json"
+  )
+}
+
+
+
+dashboard_url <- "https://kampspatial.shinyapps.io/BenQ_2026_DSPC/"
+
+buttons <- list(
+  list(
+    list(text = "📊 Open DSPC WebApp", url = dashboard_url)
+  )
+)
+
+send_message_buttons(
+  "📌 <b>Quick Actions</b>\nChoose an option below:",
+  buttons
+)
+
+
+
 ############################################
 ## ENHANCED TELEGRAM FINANCIAL REMINDER
 ## With exact payment matching and pending amount calculation
@@ -1147,6 +1183,7 @@ check_data_consistency <- function() {
 
 # Then send the reminder
 send_financial_reminder()
+
 
 
 
