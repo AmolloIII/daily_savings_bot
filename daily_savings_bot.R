@@ -309,12 +309,12 @@ STATE_FILE <- "last_status_state.rds"
 if (file.exists(STATE_FILE)) {
   last_state <- readRDS(STATE_FILE)
 } else {
-  last_state <- gs_data %>%
+  last_state <- savings_data %>%
     select(date, status)
 }
 
 
-status_changes <- gs_data %>%
+status_changes <- savings_data %>%
   select(date, status) %>%
   left_join(
     last_state %>% rename(prev_status = status),
@@ -1252,9 +1252,10 @@ if (nrow(status_changes) > 0) {
 
 
 saveRDS(
-  gs_data %>% select(date, status),
+  savings_data %>% select(date, status),
   STATE_FILE
 )
+
 
 
 
