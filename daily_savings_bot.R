@@ -303,6 +303,25 @@ savings_data <- read_sheet(YOUR_GOOGLE_SHEET_URL) %>% mutate(date = as.Date(date
 savings_data <- savings_data %>%
   mutate(correct_actual = cumsum(rep(15, n())))
 
+
+STATE_FILE <- "last_status_state.rds"
+
+if (file.exists(STATE_FILE)) {
+  last_state <- readRDS(STATE_FILE)
+} else {
+  last_state <- gs_data %>%
+    select(date, status)
+}
+
+
+status_changes <- gs_data %>%
+  select(date, status) %>%
+  left_join(
+    last_state %>% rename(prev_status = status),
+    by = "date"
+  ) %>%
+  filter(!is.na(prev_status), status != prev_status)
+
 today <- Sys.Date()
 
 # -------------------------
@@ -1184,6 +1203,58 @@ check_data_consistency <- function() {
 # Then send the reminder
 send_financial_reminder()
 
+
+if (nrow(status_changes) > 0) {
+
+  for (i in seq_len(nrow(status_changes))) {
+
+    d <- status_changes$date[i]
+    from <- status_changes$prev_status[i]
+    to <- status_changes$status[i]
+
+    # ✅ Future → Saved
+    if (from == "Future" && to == "Saved") {
+      send_message(
+        paste0(
+          "✅ <b>SAVINGS RECORDED</b>\n\n",
+          "📅 Date: ", d, "\n",
+          "💰 Status changed from <i>Future</i> to <b>Saved</b>\n\n",
+          "👏 Great job staying consistent!"
+        )
+      )
+    }
+
+    # ❌ Future → Missed
+    if (from == "Future" && to == "Missed") {
+      send_message(
+        paste0(
+          "⚠️ <b>SAVINGS MISSED</b>\n\n",
+          "📅 Date: ", d, "\n",
+          "❌ Status changed from <i>Future</i> to <b>Missed</b>\n\n",
+          "🔁 Try to recover tomorrow."
+        )
+      )
+    }
+
+    # 🔄 Missed → Saved (recovery!)
+    if (from == "Missed" && to == "Saved") {
+      send_message(
+        paste0(
+          "🔥 <b>RECOVERY ALERT</b>\n\n",
+          "📅 Date: ", d, "\n",
+          "💪 Status changed from <i>Missed</i> to <b>Saved</b>\n\n",
+          "🚀 That’s discipline!"
+        )
+      )
+    }
+  }
+}
+
+
+saveRDS(
+  gs_data %>% select(date, status),
+  STATE_FILE
+)
 
 
 
