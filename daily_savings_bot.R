@@ -1110,8 +1110,8 @@ send_financial_reminder <- function() {
     )
     
     # Send main message
-    cat("📤 Sending message to Telegram...\n")
-    send_message(message)
+    # cat("📤 Sending message to Telegram...\n")
+    # send_message(message)
     
     # Send urgent reminders separately if any
     urgent_bills <- bills %>% 
@@ -1141,7 +1141,7 @@ send_financial_reminder <- function() {
         
         urgent_msg <- paste0(urgent_msg, "\n")
       }
-      send_message(urgent_msg)
+     # send_message(urgent_msg)
       cat("⚠️ Sent urgent reminders:", nrow(urgent_bills), "bills\n")
     }
     
@@ -1201,7 +1201,7 @@ check_data_consistency <- function() {
 # check_data_consistency()
 
 # Then send the reminder
-send_financial_reminder()
+# send_financial_reminder()
 
 
 if (nrow(status_changes) > 0) {
@@ -1255,6 +1255,7 @@ saveRDS(
   savings_data %>% select(date, status),
   STATE_FILE
 )
+
 
 
 
