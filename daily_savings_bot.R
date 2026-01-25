@@ -1258,8 +1258,8 @@ saveRDS(
 
 
 
-BenQ_data <- read_sheet(YOUR_GOOGLE_SHEET_URL, sheet = "savings_data") %>% mutate(member = "Ben")
-Abby_data <- read_sheet(YOUR_GOOGLE_SHEET_URL, sheet = "savings_data_Abby") %>% mutate(member = "Abby")
+BenQ_data <- read_sheet(sheet_id, sheet = "savings_data") %>% mutate(member = "Ben")
+Abby_data <- read_sheet(sheet_id, sheet = "savings_data_Abby") %>% mutate(member = "Abby")
 
 all_data <- bind_rows(BenQ_data, Abby_data) %>%
   mutate(date = as.Date(date),
@@ -1363,6 +1363,7 @@ ggsave(combined_file, combined_plot, width = 15, height = 6, dpi = 300)
 
 bot <- Bot(token = BOT_TOKEN)
 bot$sendPhoto(chat_id = CHAT_ID, photo = combined_file, caption = "Ben's Savings Progress 📊")
+
 
 
 
