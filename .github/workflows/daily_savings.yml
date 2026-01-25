@@ -25,7 +25,7 @@ jobs:
         run: |
           R -e "install.packages('remotes')"
           R -e "remotes::install_cran(c(
-            'dplyr','lubridate','rvest','httr','stringr','ggplot2','tidyr','patchwork','scales',
+            'dplyr','lubridate','rvest','httr','stringr','ggplot2','tidyr','patchwork','scales','telegram.bot',
             'googlesheets4','gargle', 'base64enc'
           ))"
 
