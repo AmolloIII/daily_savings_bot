@@ -1258,6 +1258,113 @@ saveRDS(
 
 
 
+BenQ_data <- read_sheet(sheet_id, sheet = "savings_data") %>% mutate(member = "Ben")
+Abby_data <- read_sheet(sheet_id, sheet = "savings_data_Abby") %>% mutate(member = "Abby")
+
+all_data <- bind_rows(BenQ_data, Abby_data) %>%
+  mutate(date = as.Date(date),
+         day_of_month = day(date)) %>%
+  arrange(member, date) %>%
+  group_by(member, month = month(date)) %>%
+  mutate(
+    daily_target = 15 * row_number(),
+    cumulative_actual = cumsum(actual),
+    cumulative_target = cumsum(daily_target)
+  ) %>%
+  ungroup() %>%
+  select(-month)
+
+# -------------------------------
+# 2. Filter for Ben only
+# -------------------------------
+ben_data <- all_data %>% filter(member == "Ben")
+
+current_date <- Sys.Date()
+current_week <- floor_date(current_date, "week")
+current_month <- floor_date(current_date, "month")
+current_year <- year(current_date)
+
+# Filter periods
+week_data  <- ben_data %>% filter(date >= current_week & date <= current_date)
+month_data <- ben_data %>% filter(date >= current_month & date <= current_date)
+year_data  <- ben_data %>% filter(year(date) == current_year)
+
+# -------------------------------
+# 3. Function to create battery plot
+# -------------------------------
+create_battery_plot <- function(df, title) {
+  days_summary <- df %>%
+    summarize(
+      saved = sum(saved),
+      missed = n() - sum(saved)
+    ) %>%
+    pivot_longer(cols = c(saved, missed), names_to = "status", values_to = "count") %>%
+    mutate(
+      perc = count / sum(count),
+      ypos = cumsum(perc) - 0.5 * perc
+    )
+  
+  terminals <- tibble(
+    x = 1,
+    ymin = 1,
+    ymax = 1.05,
+    xmin = 0.85,
+    xmax = 1.15
+  )
+  
+  ggplot(days_summary, aes(x = "Ben", y = perc, fill = status)) +
+    geom_col(width = 0.5, color = "black", size = 1, radius = 0.05) +
+    geom_text(aes(y = ypos, label = percent(perc)), color = "white", fontface = "bold") +
+    geom_rect(
+      data = terminals,
+      aes(xmin = xmin, xmax = xmax, ymin = ymin, ymax = ymax),
+      fill = "black",
+      inherit.aes = FALSE
+    ) +
+    scale_fill_manual(values = c("saved" = "#2ca02c", "missed" = "#d62728")) +
+    scale_y_continuous(labels = percent_format(), expand = expansion(mult = c(0, 0.1))) +
+    labs(title = title, x = "", y = "") +
+    theme_minimal(base_size = 12) +
+    theme(
+      plot.title = element_text(hjust = 0.5, face = "bold"),
+      legend.position = "none",
+      panel.grid = element_blank(),
+      axis.ticks = element_blank(),
+      axis.text.x = element_blank()
+    )
+}
+
+# -------------------------------
+# 4. Create individual plots
+# -------------------------------
+# Week title: "Week X of Month"
+week_num <- week(current_date)
+week_month <- month(current_date, label = TRUE, abbr = FALSE)
+week_title <- paste0("Week ", week_num, " of ", week_month)
+
+week_plot  <- create_battery_plot(week_data, week_title)
+month_title <- paste0("Month of ", month(current_date, label = TRUE, abbr = FALSE))
+month_plot <- create_battery_plot(month_data, month_title)
+year_plot  <- create_battery_plot(year_data, paste0("Year ", current_year))
+
+# -------------------------------
+# 5. Combine plots side by side
+# -------------------------------
+combined_plot <- week_plot + month_plot + year_plot + plot_layout(ncol = 3)
+
+# Save the combined plot
+combined_file <- "Ben_savings_combined.png"
+ggsave(combined_file, combined_plot, width = 15, height = 6, dpi = 300)
+
+# -------------------------------
+# 6. Send via Telegram
+# -------------------------------
+
+
+bot <- Bot(token = BOT_TOKEN)
+bot$sendPhoto(chat_id = CHAT_ID, photo = combined_file, caption = "Ben's Savings Progress 📊")
+
+
 
 
 
