@@ -10,7 +10,10 @@ library(httr)
 library(stringr)
 library(httr)
 library(jsonlite)
-
+library(tidyr)
+library(scales)
+library(patchwork)
+library(telegram.bot)
 
 
 text <- "Are you ready to enhance your understanding of money and its impact on your life?
@@ -1363,6 +1366,7 @@ ggsave(combined_file, combined_plot, width = 15, height = 6, dpi = 300)
 
 bot <- Bot(token = BOT_TOKEN)
 bot$sendPhoto(chat_id = CHAT_ID, photo = combined_file, caption = "Ben's Savings Progress 📊")
+
 
 
 
