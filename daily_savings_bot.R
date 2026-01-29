@@ -1282,20 +1282,61 @@ all_data <- bind_rows(BenQ_data, Abby_data) %>%
 # -------------------------------
 ben_data <- all_data %>% filter(member == "Ben")
 
-current_date <- Sys.Date()
-current_week <- floor_date(current_date, "week")
-current_month <- floor_date(current_date, "month")
+current_date  <- Sys.Date()
+
+week_start  <- floor_date(current_date, "week")
+week_end    <- ceiling_date(current_date, "week") - days(1)
+
+month_start <- floor_date(current_date, "month")
+month_end   <- ceiling_date(current_date, "month") - days(1)
+
 current_year <- year(current_date)
 
-# Filter periods
-week_data  <- ben_data %>% filter(date >= current_week & date <= current_date)
-month_data <- ben_data %>% filter(date >= current_month & date <= current_date)
-year_data  <- ben_data %>% filter(year(date) == current_year)
+
+week_data <- ben_data %>%
+  filter(date >= week_start & date <= week_end)
+
+month_data <- ben_data %>%
+  filter(date >= month_start & date <= month_end)
+
+year_data <- ben_data %>%
+  filter(year(date) == current_year)
+
+
+
+week_data <- week_data %>%
+  complete(
+    date = seq.Date(week_start, week_end, by = "day"),
+    fill = list(
+      saved = FALSE,
+      actual = 0,
+      status = "Not Saved",
+      daily_target = 0,
+      cumulative_actual = NA,
+      cumulative_target = NA
+    )
+  )
+
+month_data <- month_data %>%
+  complete(
+    date = seq.Date(month_start, month_end, by = "day"),
+    fill = list(
+      saved = FALSE,
+      actual = 0,
+      status = "Not Saved",
+      daily_target = 0,
+      cumulative_actual = NA,
+      cumulative_target = NA
+    )
+  )
+
+
 
 # -------------------------------
-# 3. Function to create battery plot
+# 3. Battery plot function
 # -------------------------------
-create_battery_plot <- function(df, title) {
+create_battery_plot <- function(df, title, member_name = "Ben") {
+  
   days_summary <- df %>%
     summarize(
       saved = sum(saved),
@@ -1315,9 +1356,9 @@ create_battery_plot <- function(df, title) {
     xmax = 1.15
   )
   
-  ggplot(days_summary, aes(x = "Ben", y = perc, fill = status)) +
-    geom_col(width = 0.5, color = "black", size = 1, radius = 0.05) +
-    geom_text(aes(y = ypos, label = percent(perc)), color = "white", fontface = "bold") +
+  ggplot(days_summary, aes(x = member_name, y = perc, fill = status)) +
+    geom_col(width = 0.5, color = "black") +
+    geom_text(aes(y = ypos, label = scales::percent(perc)), color = "white", fontface = "bold") +
     geom_rect(
       data = terminals,
       aes(xmin = xmin, xmax = xmax, ymin = ymin, ymax = ymax),
@@ -1325,7 +1366,7 @@ create_battery_plot <- function(df, title) {
       inherit.aes = FALSE
     ) +
     scale_fill_manual(values = c("saved" = "#2ca02c", "missed" = "#d62728")) +
-    scale_y_continuous(labels = percent_format(), expand = expansion(mult = c(0, 0.1))) +
+    scale_y_continuous(labels = scales::percent_format(), expand = expansion(mult = c(0, 0.1))) +
     labs(title = title, x = "", y = "") +
     theme_minimal(base_size = 12) +
     theme(
@@ -1340,20 +1381,19 @@ create_battery_plot <- function(df, title) {
 # -------------------------------
 # 4. Create individual plots
 # -------------------------------
-# Week title: "Week X of Month"
-week_num <- week(current_date)
-week_month <- month(current_date, label = TRUE, abbr = FALSE)
-week_title <- paste0("Week ", week_num, " of ", week_month)
+week_title  <- paste0("Week ", week(current_date), " of ", month(current_date, label = TRUE, abbr = FALSE))
+month_title <- paste0("Month of ", month(current_date, label = TRUE, abbr = FALSE))
+year_title  <- paste0("Year ", current_year)
 
 week_plot  <- create_battery_plot(week_data, week_title)
-month_title <- paste0("Month of ", month(current_date, label = TRUE, abbr = FALSE))
 month_plot <- create_battery_plot(month_data, month_title)
-year_plot  <- create_battery_plot(year_data, paste0("Year ", current_year))
+year_plot  <- create_battery_plot(year_data, year_title)
 
 # -------------------------------
 # 5. Combine plots side by side
 # -------------------------------
 combined_plot <- week_plot + month_plot + year_plot + plot_layout(ncol = 3)
+
 
 # Save the combined plot
 combined_file <- "Ben_savings_combined.png"
@@ -1366,6 +1406,7 @@ ggsave(combined_file, combined_plot, width = 15, height = 6, dpi = 300)
 
 bot <- Bot(token = BOT_TOKEN)
 bot$sendPhoto(chat_id = CHAT_ID, photo = combined_file, caption = "Ben's Savings Progress 📊")
+
 
 
 
