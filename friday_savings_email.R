@@ -34,6 +34,19 @@ create_email_body <- function(member_name, weekly_table, payout_info,
   # Convert gt table to HTML string
   table_html <- gt::as_raw_html(weekly_table)
   
+  # Prepare payout info strings
+  payout_date_str <- if (is.na(payout_info$date)) {
+    "Not scheduled"
+  } else {
+    format(payout_info$date, "%B %d, %Y")
+  }
+  
+  days_until_str <- if (is.na(payout_info$days_until)) {
+    "-"
+  } else {
+    as.character(payout_info$days_until)
+  }
+  
   # Create the complete HTML email
   html_content <- glue::glue('
 <!DOCTYPE html>
@@ -238,8 +251,8 @@ create_email_body <- function(member_name, weekly_table, payout_info,
                 <h3>🏆 Upcoming Payout</h3>
                 <div class="payout-info">
                     <p><strong>Next Recipient:</strong> {payout_info$member}</p>
-                    <p><strong>Payout Date:</strong> {ifelse(is.na(payout_info$date), "Not scheduled", format(payout_info$date, "%B %d, %Y"))}</p>
-                    <p><strong>Days until payout:</strong> {ifelse(is.na(payout_info$days_until), "-", payout_info$days_until)}</p>
+                    <p><strong>Payout Date:</strong> {payout_date_str}</p>
+                    <p><strong>Days until payout:</strong> {days_until_str}</p>
                 </div>
             </div>
             
@@ -421,9 +434,11 @@ run_friday_email <- function() {
       provider = 'gmail'
     )
     
-    # Test credentials first
-    cat("Testing email credentials...\n")
-    test_msg <- compose_email(body = "Test email for credential verification")
+    # Test credentials first with a simple test
+    cat("Testing email credentials with simple test...\n")
+    test_email <- compose_email(
+      body = "Test email for credential verification. If you receive this, SMTP is working."
+    )
     
     # Loop through each member and send email
     for(i in 1:nrow(members_info)) {
@@ -554,7 +569,7 @@ run_friday_email <- function() {
         
         subject_text <- paste("💰 Weekly Savings Update - Week", isoweek(today), "|", format(today, "%B %d, %Y"))
         
-        if (send_email_safely(email_msg, "ndpptasktracker@gmail.com", subject_text, my_email_creds)) {
+        if (send_email_safely(email_msg, member$email, subject_text, my_email_creds)) {
           cat(sprintf("  ✅ Email sent to %s\n", member$display_name))
           success_count <- success_count + 1
         } else {
@@ -568,6 +583,11 @@ run_friday_email <- function() {
         
       }, error = function(e) {
         cat(sprintf("  ❌ Error processing %s: %s\n", member$display_name, e$message))
+        # Print traceback for debugging
+        if (exists("traceback")) {
+          cat("Traceback:\n")
+          print(traceback())
+        }
       })
     }
     
@@ -584,10 +604,14 @@ run_friday_email <- function() {
   }, error = function(e) {
     cat("❌ Critical error in Friday email script:\n")
     cat(e$message, "\n")
+    # Print traceback for debugging
+    if (exists("traceback")) {
+      cat("Traceback:\n")
+      print(traceback())
+    }
     return(FALSE)
   })
 }
 
 # Run the function
 run_friday_email()
-
