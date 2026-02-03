@@ -2,6 +2,12 @@ name: Friday Savings Email
 
 on:
   workflow_dispatch:  # manual run
+    inputs:
+      send_emails:
+        description: 'Send emails (true/false)'
+        required: false
+        default: 'false'
+        type: boolean
   schedule:
     - cron: '0 16 * * 5'  # Friday 7 PM Kenya time = 16:00 UTC (Friday)
 
@@ -31,7 +37,14 @@ jobs:
           chmod 600 gs.json
           
       - name: Run Friday Savings Email
-        run: Rscript friday_savings_email.R
+        run: |
+          if [ "${{ github.event_name }}" == "workflow_dispatch" ] && [ "${{ github.event.inputs.send_emails }}" == "true" ]; then
+            echo "Running with email sending enabled"
+            Rscript friday_savings_email.R --send
+          else
+            echo "Running in file save mode (default)"
+            Rscript friday_savings_email.R
+          fi
         env:
           GSHEET_JSON_B64: ${{ secrets.GSHEET_JSON_B64 }}
           MY_GMAIL_ACCOUNT: ${{ secrets.MY_GMAIL_ACCOUNT }}
