@@ -1,9 +1,7 @@
-# friday_savings_email.R - DEBUG VERSION
-Sys.setenv(
-  MY_GMAIL_ACCOUNT = Sys.getenv('MY_GMAIL_ACCOUNT'),
-  SMTP_PASSWORD = Sys.getenv('SMTP_PASSWORD')
-)
+# friday_savings_email.R
+# Weekly savings email script - Runs on Fridays at 7 PM Kenya time (16:00 UTC)
 
+# Load required packages
 library(tidyr)
 library(lubridate)
 library(gt)
@@ -12,185 +10,335 @@ library(googlesheets4)
 library(blastula)
 library(glue)
 
-cat("=== DEBUG MODE ===\n")
+cat("📧 Friday Savings Email Script\n")
+cat("==============================\n\n")
 
-# Test email credentials first
-cat("Testing email credentials...\n")
-my_email_creds <- creds_envvar(
-  user = Sys.getenv('MY_GMAIL_ACCOUNT'),
-  pass_envvar = 'SMTP_PASSWORD',
-  provider = 'gmail'
+# Member information mapping
+members_info <- data.frame(
+  sheet_name = c(
+    "Ben Amollo",
+    "Shabir Odhiambo", 
+    "Arthur Mbatia",
+    "Stephen Katana",
+    "James Nyaga",
+    "Collins Korir",
+    "Meshack Ngava",
+    "Orvile Oreener",
+    "George Njoroge",
+    "Dan Njenga"
+  ),
+  display_name = c(
+    "Ben Amollo",
+    "Shabir",
+    "Kanyanjua",
+    "Katz",
+    "Mutugi Nyaga",
+    "Kolo",
+    "Ngava",
+    "Double O",
+    "Njoro",
+    "Wakajiado3"
+  ),
+  email = c(
+    "amollozeethird@gmail.com",
+    "ayoubshabir@gmail.com",
+    "aspkenya@gmail.com",
+    "lamiri93@gmail.com",
+    "mutugiwanyaga24@gmail.com",
+    "korayalakwen@gmail.com",
+    "ngavamuumbi@outlook.com",
+    "orvillenyandoro@gmail.com",
+    "gnjoro9@gmail.com",
+    "danielkaroga@gmail.com"
+  ),
+  order_number = c(10, 8, 1, 9, 7, 5, 2, 4, 3, 6),
+  stringsAsFactors = FALSE
 )
 
-# Test with a simple email
-test_email <- compose_email(
-  body = "Test email from Friday script. If you receive this, credentials are working."
-)
-
-tryCatch({
-  smtp_send(
-    email = test_email,
-    from = Sys.getenv("MY_GMAIL_ACCOUNT"),
-    to = "amollozeethird@gmail.com",
-    subject = "Test Email - Friday Script",
-    credentials = my_email_creds
+# Create payout dates (in order)
+payout_dates <- as.Date(
+  c(
+    "2026-02-08", "2026-02-15", "2026-02-22",
+    "2026-03-01", "2026-03-08", "2026-03-15",
+    "2026-03-22", "2026-03-29",
+    "2026-04-05", "2026-04-12"
   )
-  cat("✅ Test email sent successfully!\n")
-}, error = function(e) {
-  cat("❌ Test email failed:", e$message, "\n")
-})
+)
 
-# Now let's debug the main function
-cat("\n=== Testing data loading ===\n")
+# Function to format currency
+format_kes <- function(amount) {
+  if (is.na(amount) || amount == 0) {
+    return("KES 0")
+  }
+  return(paste0("KES ", format(round(amount), big.mark = ",", nsmall = 0)))
+}
 
-tryCatch({
-  # Authenticate and load data
-  gs4_auth(path = "gs.json")
-  sheet_id <- "1qidIxYD2DAOIZ64ONtbphsJOXdPDXnxVnP1kcJs_Qx0"
+# Function to create email body (simplified)
+create_email_body_simple <- function(member_name, weekly_table_html, 
+                                     payout_member, payout_date_str,
+                                     current_week_total, month_total, 
+                                     current_date) {
   
-  daily_dataz <- read_sheet(sheet_id, sheet = "Member Contributions") 
-  daily_dataz <- daily_dataz %>%
-    dplyr::filter(!Name %in% c("Total Contributions", "Banked"))
+  week_number <- isoweek(current_date)
+  formatted_date <- format(current_date, "%A, %B %d, %Y")
   
-  cat("✅ Data loaded successfully. Rows:", nrow(daily_dataz), "\n")
+  # Build HTML using simple paste
+  html_content <- paste0('
+<!DOCTYPE html>
+<html>
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <style>
+        body { font-family: Arial, sans-serif; line-height: 1.6; color: #333; margin: 0; padding: 20px; background-color: #f4f4f4; }
+        .container { max-width: 600px; margin: 0 auto; background-color: white; padding: 20px; border-radius: 5px; box-shadow: 0 2px 5px rgba(0,0,0,0.1); }
+        .header { background-color: #4CAF50; color: white; padding: 20px; text-align: center; border-radius: 5px 5px 0 0; }
+        .content { padding: 20px; }
+        .stats { display: flex; justify-content: space-between; margin: 20px 0; }
+        .stat-box { flex: 1; padding: 15px; margin: 0 10px; border-radius: 5px; text-align: center; }
+        .week-stat { background-color: #e8f5e9; border-left: 4px solid #2e7d32; }
+        .month-stat { background-color: #e3f2fd; border-left: 4px solid #1565c0; }
+        .stat-value { font-size: 24px; font-weight: bold; margin: 10px 0; }
+        .payout-box { background-color: #fff3e0; padding: 15px; border-radius: 5px; border-left: 4px solid #e65100; margin: 20px 0; }
+        table { width: 100%; border-collapse: collapse; margin: 20px 0; }
+        th, td { padding: 10px; text-align: left; border-bottom: 1px solid #ddd; }
+        th { background-color: #f2f2f2; }
+        .current-week { background-color: #d4edda; }
+        .footer { text-align: center; margin-top: 20px; padding-top: 20px; border-top: 1px solid #eee; color: #777; font-size: 12px; }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <div class="header">
+            <h1>💰 Weekly Savings Update</h1>
+            <p>Week ', week_number, ' • ', formatted_date, '</p>
+        </div>
+        
+        <div class="content">
+            <h2>Hello ', member_name, '!</h2>
+            
+            <div class="stats">
+                <div class="stat-box week-stat">
+                    <h3>This Week\'s Savings</h3>
+                    <div class="stat-value">', format_kes(current_week_total), '</div>
+                </div>
+                
+                <div class="stat-box month-stat">
+                    <h3>Month-to-Date</h3>
+                    <div class="stat-value">', format_kes(month_total), '</div>
+                </div>
+            </div>
+            
+            <div class="payout-box">
+                <h3>🏆 Upcoming Payout</h3>
+                <p><strong>Next Recipient:</strong> ', payout_member, '</p>
+                <p><strong>Payout Date:</strong> ', payout_date_str, '</p>
+            </div>
+            
+            <h3>📊 Your Savings Progress</h3>
+            ', weekly_table_html, '
+            
+            <div class="tip-box">
+                <p><strong>💡 Tip:</strong> Consistency is key! Try to save daily to meet your weekly targets.</p>
+            </div>
+        </div>
+        
+        <div class="footer">
+            <p>Savings Group • Automated Weekly Update</p>
+            <p>© ', format(Sys.Date(), "%Y"), '</p>
+        </div>
+    </div>
+</body>
+</html>')
   
-  # Test with just one member
-  test_member <- "Ben Amollo"
-  cat("\n=== Testing with member:", test_member, "===\n")
+  return(html_content)
+}
+
+# Main execution function
+run_friday_email <- function() {
+  success_count <- 0
+  total_members <- nrow(members_info)
   
-  # Get member data
-  member_data <- daily_dataz %>%
-    filter(Name == test_member) %>%
-    pivot_longer(
-      cols = matches("^\\d{1,2}/\\d{1,2}/\\d{4}$"),
-      names_to = "date",
-      values_to = "actual"
-    ) %>%
-    mutate(
-      date = dmy(date),
-      saved = !is.na(actual),
-      status = if_else(saved, "Saved", "Not Saved"),
-      actual = replace_na(actual, 0),
-      date = as.Date(date),
-      day_in_month = day(date),
-      target = day_in_month * 15,
-      week_start = floor_date(date, "week", week_start = 1),
-      week_end = week_start + days(6)
-    ) %>%
-    arrange(date)
-  
-  cat("✅ Member data processed. Rows:", nrow(member_data), "\n")
-  
-  # Filter for current month
-  today <- Sys.Date()
-  current_year <- year(today)
-  selected_month <- month(today)
-  
-  dfz <- member_data %>%
-    filter(
-      year(date) == current_year,
-      month(date) == selected_month
-    )
-  
-  cat("✅ Filtered for current month. Rows:", nrow(dfz), "\n")
-  
-  if(nrow(dfz) > 0) {
-    # Create weekly summary
-    weekly_data <- dfz %>%
-      group_by(week_start, week_end) %>%
-      summarise(
-        Target = sum(target, na.rm = TRUE),
-        Actual = sum(actual, na.rm = TRUE),
-        .groups = "drop"
-      ) %>%
-      arrange(week_start) %>%
-      mutate(
-        Week = row_number(),
-        Start_Date = format(week_start, "%d %b"),
-        End_Date = format(week_end, "%d %b")
-      )
+  tryCatch({
+    cat("Starting Friday email script...\n")
     
-    cat("✅ Weekly data created. Weeks:", nrow(weekly_data), "\n")
+    # Create payout dataframe
+    payout_df <- members_info %>%
+      arrange(order_number) %>%
+      mutate(Payout_Date = payout_dates[order_number])
     
-    # Create gt table
-    weekly_gt <- weekly_data %>%
-      select(Week, Start_Date, End_Date, Target, Actual) %>%
-      gt() %>%
-      cols_label(
-        Week = "Week #",
-        Start_Date = "Start Date",
-        End_Date = "End Date",
-        Target = "Weekly Target",
-        Actual = "Actual Savings"
-      ) %>%
-      fmt_currency(
-        columns = c(Target, Actual),
-        currency = "KES",
-        decimals = 0
-      ) %>%
-      cols_align(align = "center", columns = Week) %>%
-      opt_table_outline()
+    # -------- READ & PREPARE DAILY DATA --------
+    cat("Authenticating with Google Sheets...\n")
     
-    cat("✅ GT table created successfully\n")
+    # Create credentials file from environment variable
+    gs4_auth(path = "gs.json")
     
-    # Test converting to HTML
-    cat("Testing GT table to HTML conversion...\n")
-    table_html <- gt::as_raw_html(weekly_gt)
-    cat("✅ GT table converted to HTML. Length:", nchar(table_html), "\n")
+    sheet_id <- "1qidIxYD2DAOIZ64ONtbphsJOXdPDXnxVnP1kcJs_Qx0"
     
-    # Test creating a simple email
-    cat("Testing simple email creation...\n")
+    daily_dataz <- read_sheet(sheet_id, sheet = "Member Contributions") 
+    daily_dataz <- daily_dataz %>%
+      dplyr::filter(!Name %in% c("Total Contributions", "Banked"))
     
-    # Simple function to format KES
-    format_kes <- function(x) {
-      if(is.numeric(x)) {
-        return(paste0("KES ", format(round(x, 2), big.mark = ",", nsmall = 2)))
-      }
-      return(paste0("KES ", x))
+    cat("✅ Data loaded successfully\n")
+    
+    # Process each member
+    for(i in 1:nrow(members_info)) {
+      member <- members_info[i, ]
+      
+      cat(sprintf("\n[%d/%d] Processing %s...\n", i, total_members, member$display_name))
+      
+      tryCatch({
+        # Get member data
+        member_data <- daily_dataz %>%
+          filter(Name == member$sheet_name) %>%
+          pivot_longer(
+            cols = matches("^\\d{1,2}/\\d{1,2}/\\d{4}$"),
+            names_to = "date",
+            values_to = "actual"
+          ) %>%
+          mutate(
+            date = as.Date(dmy(date)),
+            actual = replace_na(actual, 0)
+          ) %>%
+          arrange(date) %>%
+          head(366)  # Limit to 366 days
+        
+        if(nrow(member_data) == 0) {
+          cat("  ⚠️ No data found\n")
+          next
+        }
+        
+        # Get current date info
+        today <- Sys.Date()
+        selected_month <- month(today)
+        current_year <- year(today)
+        current_week_start <- floor_date(today, "week", week_start = 1)
+        
+        # Add calculated columns
+        member_data <- member_data %>%
+          mutate(
+            day_in_month = day(date),
+            target = day_in_month * 15,
+            week_start = floor_date(date, "week", week_start = 1),
+            week_end = week_start + days(6)
+          )
+        
+        # Filter for current month
+        monthly_data <- member_data %>%
+          filter(
+            year(date) == current_year,
+            month(date) == selected_month
+          )
+        
+        if(nrow(monthly_data) == 0) {
+          cat("  ⚠️ No data for current month\n")
+          next
+        }
+        
+        # Create weekly summary
+        weekly_data <- monthly_data %>%
+          group_by(week_start, week_end) %>%
+          summarise(
+            Target = sum(target, na.rm = TRUE),
+            Actual = sum(actual, na.rm = TRUE),
+            .groups = "drop"
+          ) %>%
+          arrange(week_start) %>%
+          mutate(
+            Week = row_number(),
+            Start_Date = format(week_start, "%d %b"),
+            End_Date = format(week_end, "%d %b"),
+            Week_Status = case_when(
+              week_start < current_week_start ~ "past",
+              week_start == current_week_start ~ "current",
+              week_start > current_week_start ~ "future"
+            )
+          )
+        
+        # Create simple table
+        table_html <- paste0('
+        <table border="1" cellpadding="5" cellspacing="0" style="border-collapse: collapse; width: 100%;">
+        <thead>
+        <tr style="background-color: #f2f2f2;">
+            <th>Week #</th>
+            <th>Start Date</th>
+            <th>End Date</th>
+            <th>Weekly Target</th>
+            <th>Actual Savings</th>
+        </tr>
+        </thead>
+        <tbody>')
+        
+        for(j in 1:nrow(weekly_data)) {
+          week <- weekly_data[j, ]
+          row_class <- ifelse(week$Week_Status == "current", "current-week", "")
+          table_html <- paste0(table_html, '
+        <tr class="', row_class, '">
+            <td>', week$Week, '</td>
+            <td>', week$Start_Date, '</td>
+            <td>', week$End_Date, '</td>
+            <td>', format_kes(week$Target), '</td>
+            <td>', format_kes(week$Actual), '</td>
+        </tr>')
+        }
+        
+        table_html <- paste0(table_html, '
+        </tbody>
+        </table>')
+        
+        # Calculate totals
+        current_week_data <- member_data %>%
+          filter(date >= floor_date(today, unit = "week") &
+                 date <= ceiling_date(today, unit = "week") - days(1))
+        
+        current_week_total <- sum(current_week_data$actual, na.rm = TRUE)
+        month_total <- sum(monthly_data$actual, na.rm = TRUE)
+        
+        # Get payout information
+        next_payout <- payout_df %>%
+          filter(Payout_Date >= today) %>%
+          slice(1)
+        
+        payout_member <- ifelse(nrow(next_payout) > 0, next_payout$display_name, "Not scheduled")
+        payout_date_str <- ifelse(nrow(next_payout) > 0, 
+                                 format(next_payout$Payout_Date, "%B %d, %Y"), 
+                                 "Not scheduled")
+        
+        # Create email body
+        email_body <- create_email_body_simple(
+          member_name = member$display_name,
+          weekly_table_html = table_html,
+          payout_member = payout_member,
+          payout_date_str = payout_date_str,
+          current_week_total = current_week_total,
+          month_total = month_total,
+          current_date = today
+        )
+        
+        # For now, save email to file instead of sending
+        # (We'll fix email sending separately)
+        filename <- paste0("email_", gsub(" ", "_", member$display_name), "_", 
+                          format(today, "%Y%m%d"), ".html")
+        writeLines(email_body, filename)
+        
+        cat(sprintf("  ✅ Email saved to %s\n", filename))
+        success_count <- success_count + 1
+        
+      }, error = function(e) {
+        cat(sprintf("  ❌ Error: %s\n", e$message))
+      })
     }
     
-    # Calculate totals
-    current_week_data <- member_data %>%
-      filter(date >= floor_date(today, unit = "week") &
-             date <= ceiling_date(today, unit = "week") - days(1))
+    cat(sprintf("\n📊 Summary: %d/%d emails processed successfully\n", success_count, total_members))
+    cat("📁 Emails have been saved as HTML files in the current directory.\n")
     
-    current_week_total <- sum(current_week_data$actual, na.rm = TRUE)
-    month_total <- sum(dfz$actual, na.rm = TRUE)
+    return(TRUE)
     
-    cat("Current week total:", current_week_total, "\n")
-    cat("Month total:", month_total, "\n")
-    
-    # Create simple HTML
-    simple_html <- paste0(
-      '<html><body>',
-      '<h1>Test Email for ', test_member, '</h1>',
-      '<p>Current week total: ', format_kes(current_week_total), '</p>',
-      '<p>Month total: ', format_kes(month_total), '</p>',
-      table_html,
-      '</body></html>'
-    )
-    
-    # Create email
-    test_email2 <- compose_email(body = html(simple_html))
-    
-    # Send test email
-    cat("Sending test email...\n")
-    smtp_send(
-      email = test_email2,
-      from = Sys.getenv("MY_GMAIL_ACCOUNT"),
-      to = "amollozeethird@gmail.com",
-      subject = paste("DEBUG - Weekly Savings Test for", test_member),
-      credentials = my_email_creds
-    )
-    
-    cat("✅ Test email with data sent successfully!\n")
-    
-  } else {
-    cat("⚠️ No data for current month\n")
-  }
-  
-}, error = function(e) {
-  cat("❌ Error in debug mode:", e$message, "\n")
-  cat("Traceback:\n")
-  traceback()
-})
+  }, error = function(e) {
+    cat(sprintf("❌ Critical error: %s\n", e$message))
+    return(FALSE)
+  })
+}
+
+# Run the function
+run_friday_email()
