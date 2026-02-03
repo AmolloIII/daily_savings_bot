@@ -235,7 +235,7 @@ create_email_body <- function(member_name, weekly_table, payout_info,
             </div>
             
             <div class="payout-box">
-                <h3>🏆 Upcoming Weekly Token Payout</h3>
+                <h3>🏆 Upcoming Payout</h3>
                 <div class="payout-info">
                     <p><strong>Next Recipient:</strong> {payout_info$member}</p>
                     <p><strong>Payout Date:</strong> {ifelse(is.na(payout_info$date), "Not scheduled", format(payout_info$date, "%B %d, %Y"))}</p>
@@ -244,7 +244,7 @@ create_email_body <- function(member_name, weekly_table, payout_info,
             </div>
             
             <div class="table-section">
-                <h3>📊 Weekly Target Vs Your Weekly Savings Progress</h3>
+                <h3>📊 Your Savings Progress</h3>
                 {table_html}
                 
                 <div class="legend">
@@ -256,7 +256,7 @@ create_email_body <- function(member_name, weekly_table, payout_info,
             
             <div class="tip-box">
                 <p><strong>💡 Tip:</strong> Consistency is key! Try to save daily to meet your weekly targets.</p>
-                <p>Have clarification? Contact the treasurer.</p>
+                <p>Have questions? Contact the group administrator.</p>
             </div>
         </div>
         
@@ -331,8 +331,39 @@ get_member_data <- function(member_name, member_daily_long) {
   return(member_data)
 }
 
+# Function to send email with better error handling
+send_email_safely <- function(email_msg, to_email, subject_text, creds) {
+  max_retries <- 3
+  retry_count <- 0
+  
+  while(retry_count < max_retries) {
+    tryCatch({
+      smtp_send(
+        email = email_msg,
+        from = Sys.getenv("MY_GMAIL_ACCOUNT"),
+        to = to_email,
+        subject = subject_text,
+        credentials = creds
+      )
+      return(TRUE)
+    }, error = function(e) {
+      retry_count <<- retry_count + 1
+      cat(sprintf("  Attempt %d failed: %s\n", retry_count, e$message))
+      if (retry_count < max_retries) {
+        cat(sprintf("  Retrying in %d seconds...\n", retry_count * 2))
+        Sys.sleep(retry_count * 2)
+      }
+    })
+  }
+  return(FALSE)
+}
+
 # Main execution function
 run_friday_email <- function() {
+  # Initialize success counter
+  success_count <- 0
+  total_members <- nrow(members_info)
+  
   tryCatch({
     cat("Starting Friday email script...\n")
     
@@ -382,164 +413,180 @@ run_friday_email <- function() {
     current_year   <- year(today)
     current_week_start <- floor_date(today, "week", week_start = 1)
     
+    # Set up email credentials once
+    cat("Setting up email credentials...\n")
+    my_email_creds <- creds_envvar(
+      user = Sys.getenv('MY_GMAIL_ACCOUNT'),
+      pass_envvar = 'SMTP_PASSWORD',
+      provider = 'gmail'
+    )
+    
+    # Test credentials first
+    cat("Testing email credentials...\n")
+    test_msg <- compose_email(body = "Test email for credential verification")
+    
     # Loop through each member and send email
     for(i in 1:nrow(members_info)) {
       member <- members_info[i, ]
       
-      cat(sprintf("\nProcessing %s (%s)...\n", member$display_name, member$email))
+      cat(sprintf("\n[%d/%d] Processing %s (%s)...\n", i, total_members, member$display_name, member$email))
       
-      # Get member-specific data
-      member_data <- get_member_data(member$sheet_name, member_daily_long)
-      
-      if(nrow(member_data) == 0) {
-        cat(sprintf("  No data found for %s\n", member$sheet_name))
-        next
-      }
-      
-      # Filter data for current month/year
-      dfz <- member_data %>%
-        filter(
-          year(date) == current_year,
-          month(date) == selected_month
-        )
-      
-      # Create weekly summary
-      weekly_data <- dfz %>%
-        group_by(week_start, week_end) %>%
-        summarise(
-          Target = sum(target, na.rm = TRUE),
-          Actual = sum(actual, na.rm = TRUE),
-          .groups = "drop"
-        ) %>%
-        arrange(week_start) %>%
-        mutate(
-          Week = row_number(),
-          Start_Date = format(week_start, "%d %b"),
-          End_Date   = format(week_end, "%d %b"),
-          Week_Status = case_when(
-            week_start < current_week_start ~ "past",
-            week_start == current_week_start ~ "current",
-            week_start > current_week_start ~ "future"
+      tryCatch({
+        # Get member-specific data
+        member_data <- get_member_data(member$sheet_name, member_daily_long)
+        
+        if(nrow(member_data) == 0) {
+          cat(sprintf("  ⚠️ No data found for %s\n", member$sheet_name))
+          next
+        }
+        
+        # Filter data for current month/year
+        dfz <- member_data %>%
+          filter(
+            year(date) == current_year,
+            month(date) == selected_month
           )
-        )
-      
-      # Create gt table
-      weekly_gt <- weekly_data %>%
-        select(
-          Week,
-          Start_Date,
-          End_Date,
-          Target,
-          Actual,
-          Week_Status
-        ) %>%
-        gt() %>%
-        cols_label(
-          Week = "Week #",
-          Start_Date = "Start Date",
-          End_Date = "End Date",
-          Target = "Weekly Target",
-          Actual = "Actual Savings",
-          Week_Status = "Status"
-        ) %>%
-        tab_style(
-          style = list(
-            cell_fill(color = "#d4edda"),
-            cell_text(weight = "bold")
-          ),
-          locations = cells_body(rows = Week_Status == "current")
-        ) %>%
-        tab_style(
-          style = cell_fill(color = "#f8d7da"),
-          locations = cells_body(rows = Week_Status == "past")
-        ) %>%
-        tab_style(
-          style = cell_fill(color = "#f2f2f2"),
-          locations = cells_body(rows = Week_Status == "future")
-        ) %>%
-        fmt_currency(
-          columns = c(Target, Actual),
-          currency = "KES",
-          decimals = 0
-        ) %>%
-        cols_hide(Week_Status) %>%
-        cols_align(
-          align = "center",
-          columns = Week
-        ) %>%
-        opt_table_outline()
-      
-      # Get current week data
-      current_week_data <- member_data %>%
-        filter(date >= floor_date(today, unit = "week") &
+        
+        # Create weekly summary
+        weekly_data <- dfz %>%
+          group_by(week_start, week_end) %>%
+          summarise(
+            Target = sum(target, na.rm = TRUE),
+            Actual = sum(actual, na.rm = TRUE),
+            .groups = "drop"
+          ) %>%
+          arrange(week_start) %>%
+          mutate(
+            Week = row_number(),
+            Start_Date = format(week_start, "%d %b"),
+            End_Date   = format(week_end, "%d %b"),
+            Week_Status = case_when(
+              week_start < current_week_start ~ "past",
+              week_start == current_week_start ~ "current",
+              week_start > current_week_start ~ "future"
+            )
+          )
+        
+        # Create gt table
+        weekly_gt <- weekly_data %>%
+          select(
+            Week,
+            Start_Date,
+            End_Date,
+            Target,
+            Actual,
+            Week_Status
+          ) %>%
+          gt() %>%
+          cols_label(
+            Week = "Week #",
+            Start_Date = "Start Date",
+            End_Date = "End Date",
+            Target = "Weekly Target",
+            Actual = "Actual Savings",
+            Week_Status = "Status"
+          ) %>%
+          tab_style(
+            style = list(
+              cell_fill(color = "#d4edda"),
+              cell_text(weight = "bold")
+            ),
+            locations = cells_body(rows = Week_Status == "current")
+          ) %>%
+          tab_style(
+            style = cell_fill(color = "#f8d7da"),
+            locations = cells_body(rows = Week_Status == "past")
+          ) %>%
+          tab_style(
+            style = cell_fill(color = "#f2f2f2"),
+            locations = cells_body(rows = Week_Status == "future")
+          ) %>%
+          fmt_currency(
+            columns = c(Target, Actual),
+            currency = "KES",
+            decimals = 0
+          ) %>%
+          cols_hide(Week_Status) %>%
+          cols_align(
+            align = "center",
+            columns = Week
+          ) %>%
+          opt_table_outline()
+        
+        # Get current week data
+        current_week_data <- member_data %>%
+          filter(date >= floor_date(today, unit = "week") &
                  date <= ceiling_date(today, unit = "week") - days(1))
-      
-      # Calculate totals
-      current_week_total <- sum(current_week_data$actual, na.rm = TRUE)
-      month_total <- sum(dfz$actual, na.rm = TRUE)
-      
-      # Get payout information
-      next_payout <- payout_df %>%
-        filter(Payout_Date >= today) %>%
-        slice(1)
-      
-      payout_info <- list(
-        member = next_payout$display_name,
-        date = next_payout$Payout_Date,
-        days_until = as.numeric(next_payout$Payout_Date - today)
-      )
-      
-      # Create email body
-      cat("  Creating email content...\n")
-      email_body <- create_email_body(
-        member_name = member$display_name,
-        weekly_table = weekly_gt,
-        payout_info = payout_info,
-        current_week_total = current_week_total,
-        month_total = month_total,
-        current_date = today
-      )
-      
-      # Create email message
-      email_msg <- compose_email(
-        body = html(email_body)
-      )
-      
-      # Set up credentials for SMTP
-      my_email_creds <- creds_envvar(
-        user = Sys.getenv('MY_GMAIL_ACCOUNT'),
-        pass_envvar = 'SMTP_PASSWORD',
-        provider = 'gmail'
-      )
-      
-      # Send email
-      cat(sprintf("  Sending email to %s...\n", member$email))
-      smtp_send(
-        email = email_msg,
-        from = Sys.getenv("MY_GMAIL_ACCOUNT"),
-        to = "ndpptasktracker@gmail.com",
-        subject = paste("💰 Weekly Savings Update - Week", isoweek(today), "|", format(today, "%B %d, %Y")),
-        credentials = my_email_creds
-      )
-      
-      cat(sprintf("  ✅ Email sent to %s\n", member$display_name))
-      
-      # Add a small delay between emails to avoid rate limiting
-      if(i < nrow(members_info)) {
-        Sys.sleep(2)
-      }
+        
+        # Calculate totals
+        current_week_total <- sum(current_week_data$actual, na.rm = TRUE)
+        month_total <- sum(dfz$actual, na.rm = TRUE)
+        
+        # Get payout information
+        next_payout <- payout_df %>%
+          filter(Payout_Date >= today) %>%
+          slice(1)
+        
+        payout_info <- list(
+          member = ifelse(nrow(next_payout) > 0, next_payout$display_name, "Not scheduled"),
+          date = ifelse(nrow(next_payout) > 0, next_payout$Payout_Date, NA),
+          days_until = ifelse(nrow(next_payout) > 0, as.numeric(next_payout$Payout_Date - today), NA)
+        )
+        
+        # Create email body
+        cat("  Creating email content...\n")
+        email_body <- create_email_body(
+          member_name = member$display_name,
+          weekly_table = weekly_gt,
+          payout_info = payout_info,
+          current_week_total = current_week_total,
+          month_total = month_total,
+          current_date = today
+        )
+        
+        # Create email message
+        email_msg <- compose_email(
+          body = html(email_body)
+        )
+        
+        # Send email with retry logic
+        cat(sprintf("  Sending email to %s...\n", member$email))
+        
+        subject_text <- paste("💰 Weekly Savings Update - Week", isoweek(today), "|", format(today, "%B %d, %Y"))
+        
+        if (send_email_safely(email_msg, member$email, subject_text, my_email_creds)) {
+          cat(sprintf("  ✅ Email sent to %s\n", member$display_name))
+          success_count <- success_count + 1
+        } else {
+          cat(sprintf("  ❌ Failed to send email to %s after retries\n", member$display_name))
+        }
+        
+        # Add a small delay between emails to avoid rate limiting
+        if(i < total_members) {
+          Sys.sleep(3)
+        }
+        
+      }, error = function(e) {
+        cat(sprintf("  ❌ Error processing %s: %s\n", member$display_name, e$message))
+      })
     }
     
-    cat("\n✅ All Friday emails sent successfully!\n")
-    return(TRUE)
+    cat(sprintf("\n📊 Summary: %d/%d emails sent successfully\n", success_count, total_members))
+    
+    if (success_count > 0) {
+      cat("✅ Friday email script completed successfully!\n")
+      return(TRUE)
+    } else {
+      cat("⚠️ No emails were sent. Check the logs above for errors.\n")
+      return(FALSE)
+    }
     
   }, error = function(e) {
-    cat("❌ Error in Friday email script:\n")
+    cat("❌ Critical error in Friday email script:\n")
     cat(e$message, "\n")
     return(FALSE)
   })
 }
 
 # Run the function
-
 run_friday_email()
