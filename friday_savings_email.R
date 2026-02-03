@@ -73,16 +73,16 @@ format_kes <- function(amount) {
   return(paste0("KES ", format(round(amount), big.mark = ",", nsmall = 0)))
 }
 
-# Function to create email body (simplified)
-create_email_body_simple <- function(member_name, weekly_table_html, 
-                                     payout_member, payout_date_str,
-                                     current_week_total, month_total, 
-                                     current_date) {
+# Function to create email body
+create_email_body <- function(member_name, weekly_table_html, 
+                              payout_member, payout_date_str,
+                              current_week_total, month_total, 
+                              current_date) {
   
   week_number <- isoweek(current_date)
   formatted_date <- format(current_date, "%A, %B %d, %Y")
   
-  # Build HTML using simple paste
+  # Build HTML
   html_content <- paste0('
 <!DOCTYPE html>
 <html>
@@ -154,14 +154,81 @@ create_email_body_simple <- function(member_name, weekly_table_html,
   return(html_content)
 }
 
+# Function to test email credentials
+test_email_credentials <- function() {
+  cat("🔧 Testing email credentials...\n")
+  
+  tryCatch({
+    # Get credentials from environment
+    gmail_user <- Sys.getenv("MY_GMAIL_ACCOUNT")
+    gmail_pass <- Sys.getenv("SMTP_PASSWORD")
+    
+    if (gmail_user == "" || gmail_pass == "") {
+      cat("❌ Email credentials not found in environment variables\n")
+      cat("   MY_GMAIL_ACCOUNT:", ifelse(gmail_user == "", "NOT SET", "SET"), "\n")
+      cat("   SMTP_PASSWORD:", ifelse(gmail_pass == "", "NOT SET", "SET (hidden)"), "\n")
+      return(FALSE)
+    }
+    
+    cat("✅ Email credentials found in environment\n")
+    
+    # Create test credentials
+    test_creds <- creds(
+      user = gmail_user,
+      pass = gmail_pass,
+      provider = "gmail",
+      host = "smtp.gmail.com",
+      port = 587,
+      use_ssl = TRUE
+    )
+    
+    # Try to create a simple test email
+    test_email <- compose_email(
+      body = "This is a test email to verify SMTP credentials are working correctly."
+    )
+    
+    cat("📨 Attempting to send test email...\n")
+    
+    # Send test email
+    smtp_send(
+      email = test_email,
+      from = gmail_user,
+      to = gmail_user,  # Send to self
+      subject = "Test Email - Friday Savings Script",
+      credentials = test_creds
+    )
+    
+    cat("✅ Test email sent successfully!\n")
+    return(TRUE)
+    
+  }, error = function(e) {
+    cat("❌ Email test failed:", e$message, "\n")
+    cat("\n🔧 TROUBLESHOOTING TIPS:\n")
+    cat("1. Make sure you're using an APP PASSWORD, not your regular Gmail password\n")
+    cat("2. Enable 2-Step Verification on your Google account\n")
+    cat("3. Generate an App Password at: https://myaccount.google.com/apppasswords\n")
+    cat("4. For GitHub Actions, set secrets in: Settings > Secrets and variables > Actions\n")
+    return(FALSE)
+  })
+}
+
 # Main execution function
-run_friday_email <- function() {
+run_friday_email <- function(send_emails = FALSE) {
   success_count <- 0
   total_members <- nrow(members_info)
   
+  cat("Starting Friday email script...\n")
+  cat("Send emails mode:", ifelse(send_emails, "ENABLED", "DISABLED (saving to files)"), "\n\n")
+  
+  # Test email credentials if sending is enabled
+  if (send_emails) {
+    if (!test_email_credentials()) {
+      cat("\n⚠️ Switching to file save mode due to email credential issues\n")
+      send_emails <- FALSE
+    }
+  }
+  
   tryCatch({
-    cat("Starting Friday email script...\n")
-    
     # Create payout dataframe
     payout_df <- members_info %>%
       arrange(order_number) %>%
@@ -180,6 +247,18 @@ run_friday_email <- function() {
       dplyr::filter(!Name %in% c("Total Contributions", "Banked"))
     
     cat("✅ Data loaded successfully\n")
+    
+    # Set up email credentials if sending
+    if (send_emails) {
+      email_creds <- creds(
+        user = Sys.getenv("MY_GMAIL_ACCOUNT"),
+        pass = Sys.getenv("SMTP_PASSWORD"),
+        provider = "gmail",
+        host = "smtp.gmail.com",
+        port = 587,
+        use_ssl = TRUE
+      )
+    }
     
     # Process each member
     for(i in 1:nrow(members_info)) {
@@ -201,7 +280,7 @@ run_friday_email <- function() {
             actual = replace_na(actual, 0)
           ) %>%
           arrange(date) %>%
-          head(366)  # Limit to 366 days
+          head(366)
         
         if(nrow(member_data) == 0) {
           cat("  ⚠️ No data found\n")
@@ -255,7 +334,7 @@ run_friday_email <- function() {
             )
           )
         
-        # Create simple table
+        # Create HTML table
         table_html <- paste0('
         <table border="1" cellpadding="5" cellspacing="0" style="border-collapse: collapse; width: 100%;">
         <thead>
@@ -305,7 +384,7 @@ run_friday_email <- function() {
                                  "Not scheduled")
         
         # Create email body
-        email_body <- create_email_body_simple(
+        email_body <- create_email_body(
           member_name = member$display_name,
           weekly_table_html = table_html,
           payout_member = payout_member,
@@ -315,22 +394,49 @@ run_friday_email <- function() {
           current_date = today
         )
         
-        # For now, save email to file instead of sending
-        # (We'll fix email sending separately)
-        filename <- paste0("email_", gsub(" ", "_", member$display_name), "_", 
-                          format(today, "%Y%m%d"), ".html")
-        writeLines(email_body, filename)
-        
-        cat(sprintf("  ✅ Email saved to %s\n", filename))
-        success_count <- success_count + 1
+        if (send_emails) {
+          # Send email
+          cat("  📨 Sending email to", member$email, "...\n")
+          
+          email_msg <- compose_email(body = html(email_body))
+          
+          smtp_send(
+            email = email_msg,
+            from = Sys.getenv("MY_GMAIL_ACCOUNT"),
+            to = member$email,
+            subject = paste("💰 Weekly Savings Update - Week", isoweek(today), "|", format(today, "%B %d, %Y")),
+            credentials = email_creds
+          )
+          
+          cat("  ✅ Email sent successfully!\n")
+          success_count <- success_count + 1
+          
+          # Add delay to avoid rate limiting
+          if(i < total_members) {
+            Sys.sleep(2)
+          }
+          
+        } else {
+          # Save email to file
+          filename <- paste0("email_", gsub(" ", "_", member$display_name), "_", 
+                            format(today, "%Y%m%d"), ".html")
+          writeLines(email_body, filename)
+          
+          cat(sprintf("  💾 Email saved to %s\n", filename))
+          success_count <- success_count + 1
+        }
         
       }, error = function(e) {
         cat(sprintf("  ❌ Error: %s\n", e$message))
       })
     }
     
-    cat(sprintf("\n📊 Summary: %d/%d emails processed successfully\n", success_count, total_members))
-    cat("📁 Emails have been saved as HTML files in the current directory.\n")
+    if (send_emails) {
+      cat(sprintf("\n📊 Summary: %d/%d emails sent successfully\n", success_count, total_members))
+    } else {
+      cat(sprintf("\n📊 Summary: %d/%d emails saved as HTML files\n", success_count, total_members))
+      cat("📁 Check the generated HTML files in your current directory\n")
+    }
     
     return(TRUE)
     
@@ -340,5 +446,15 @@ run_friday_email <- function() {
   })
 }
 
-# Run the function
-run_friday_email()
+# Check command line arguments
+args <- commandArgs(trailingOnly = TRUE)
+
+if (length(args) > 0 && args[1] == "--send") {
+  # Run with email sending enabled
+  cat("🚀 Running with email sending enabled\n")
+  run_friday_email(send_emails = TRUE)
+} else {
+  # Run in file save mode (default)
+  cat("💾 Running in file save mode (use --send to send emails)\n")
+  run_friday_email(send_emails = FALSE)
+}
