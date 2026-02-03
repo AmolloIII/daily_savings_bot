@@ -15,24 +15,28 @@ library(googlesheets4)
 library(blastula)
 library(glue)
 
-# Helper function to format currency
-format_kes <- function(x) {
+# Helper function to format currency (simplified)
+format_kes_simple <- function(x) {
   if (is.numeric(x)) {
-    paste0("KES ", format(round(as.numeric(x), 2), big.mark = ",", nsmall = 2))
+    return(paste0("KES ", format(round(as.numeric(x), 2), big.mark = ",", nsmall = 2)))
   } else {
-    paste0("KES ", x)
+    return(paste0("KES ", x))
   }
 }
 
-#' Create HTML email body with proper structure
-create_email_body <- function(member_name, weekly_table, payout_info, 
-                              current_week_total, month_total, current_date) {
+# Helper function to create email body without complex glue issues
+create_email_body_simple <- function(member_name, weekly_table, payout_info, 
+                                     current_week_total, month_total, current_date) {
   
   week_number <- isoweek(current_date)
   formatted_date <- format(current_date, "%A, %B %d, %Y")
   
   # Convert gt table to HTML string
   table_html <- gt::as_raw_html(weekly_table)
+  
+  # Format amounts
+  current_week_formatted <- format_kes_simple(current_week_total)
+  month_total_formatted <- format_kes_simple(month_total)
   
   # Prepare payout info strings
   payout_date_str <- if (is.na(payout_info$date)) {
@@ -47,8 +51,8 @@ create_email_body <- function(member_name, weekly_table, payout_info,
     as.character(payout_info$days_until)
   }
   
-  # Create the complete HTML email
-  html_content <- glue::glue('
+  # Build HTML content directly without complex glue interpolation
+  html_content <- paste0('
 <!DOCTYPE html>
 <html>
 <head>
@@ -56,113 +60,113 @@ create_email_body <- function(member_name, weekly_table, payout_info,
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Weekly Savings Update</title>
     <style>
-        body {{
+        body {
             font-family: Arial, sans-serif;
             line-height: 1.6;
             color: #333;
             margin: 0;
             padding: 0;
             background-color: #f4f4f4;
-        }}
-        .container {{
+        }
+        .container {
             max-width: 600px;
             margin: 0 auto;
             background-color: #ffffff;
-        }}
-        .header {{
+        }
+        .header {
             background-color: #4CAF50;
             color: white;
             padding: 25px;
             text-align: center;
             border-radius: 5px 5px 0 0;
-        }}
-        .header h1 {{
+        }
+        .header h1 {
             margin: 0;
             font-size: 24px;
-        }}
-        .header p {{
+        }
+        .header p {
             margin: 10px 0 0 0;
             font-size: 16px;
             opacity: 0.9;
-        }}
-        .content {{
+        }
+        .content {
             padding: 25px;
-        }}
-        .greeting {{
+        }
+        .greeting {
             color: #333;
             border-bottom: 2px solid #4CAF50;
             padding-bottom: 15px;
             margin-bottom: 20px;
             font-size: 20px;
-        }}
-        .stats-grid {{
+        }
+        .stats-grid {
             display: grid;
             grid-template-columns: repeat(auto-fit, minmax(250px, 1fr));
             gap: 20px;
             margin: 25px 0;
-        }}
-        .stat-box {{
+        }
+        .stat-box {
             padding: 20px;
             border-radius: 8px;
             text-align: center;
             box-shadow: 0 2px 4px rgba(0,0,0,0.1);
-        }}
-        .savings-box {{
+        }
+        .savings-box {
             background-color: #e8f5e9;
             border-left: 4px solid #2e7d32;
-        }}
-        .month-box {{
+        }
+        .month-box {
             background-color: #e3f2fd;
             border-left: 4px solid #1565c0;
-        }}
-        .stat-box h3 {{
+        }
+        .stat-box h3 {
             margin: 0 0 10px 0;
             font-size: 16px;
             color: #333;
-        }}
-        .stat-value {{
+        }
+        .stat-value {
             font-size: 28px;
             font-weight: bold;
             margin: 0;
-        }}
-        .savings-value {{
+        }
+        .savings-value {
             color: #1b5e20;
-        }}
-        .month-value {{
+        }
+        .month-value {
             color: #0d47a1;
-        }}
-        .payout-box {{
+        }
+        .payout-box {
             background-color: #fff3e0;
             border-left: 4px solid #e65100;
             padding: 20px;
             border-radius: 8px;
             margin: 25px 0;
-        }}
-        .payout-box h3 {{
+        }
+        .payout-box h3 {
             color: #e65100;
             margin: 0 0 15px 0;
             font-size: 18px;
-        }}
-        .payout-info p {{
+        }
+        .payout-info p {
             margin: 8px 0;
             font-size: 16px;
             line-height: 1.5;
-        }}
-        .payout-info strong {{
+        }
+        .payout-info strong {
             display: inline-block;
             min-width: 140px;
             color: #555;
-        }}
-        .table-section {{
+        }
+        .table-section {
             margin: 30px 0;
             overflow-x: auto;
-        }}
-        .table-section h3 {{
+        }
+        .table-section h3 {
             color: #333;
             margin-bottom: 15px;
             font-size: 18px;
-        }}
-        .legend {{
+        }
+        .legend {
             margin-top: 15px;
             font-size: 13px;
             color: #666;
@@ -170,22 +174,22 @@ create_email_body <- function(member_name, weekly_table, payout_info,
             padding: 10px;
             background-color: #f9f9f9;
             border-radius: 4px;
-        }}
-        .legend-item {{
+        }
+        .legend-item {
             display: inline-block;
             margin: 0 15px;
-        }}
-        .current-week {{
+        }
+        .current-week {
             color: #2e7d32;
             font-weight: bold;
-        }}
-        .past-week {{
+        }
+        .past-week {
             color: #dc3545;
-        }}
-        .future-week {{
+        }
+        .future-week {
             color: #6c757d;
-        }}
-        .tip-box {{
+        }
+        .tip-box {
             background-color: #f5f5f5;
             padding: 20px;
             border-radius: 8px;
@@ -193,72 +197,72 @@ create_email_body <- function(member_name, weekly_table, payout_info,
             font-size: 14px;
             color: #555;
             border-left: 4px solid #6c757d;
-        }}
-        .tip-box p {{
+        }
+        .tip-box p {
             margin: 0 0 10px 0;
-        }}
-        .tip-box p:last-child {{
+        }
+        .tip-box p:last-child {
             margin-bottom: 0;
-        }}
-        .footer {{
+        }
+        .footer {
             text-align: center;
             padding: 20px;
             color: #777;
             font-size: 12px;
             border-top: 1px solid #eee;
             background-color: #f9f9f9;
-        }}
-        @media (max-width: 600px) {{
-            .stats-grid {{
+        }
+        @media (max-width: 600px) {
+            .stats-grid {
                 grid-template-columns: 1fr;
-            }}
-            .content {{
+            }
+            .content {
                 padding: 15px;
-            }}
-            .payout-info strong {{
+            }
+            .payout-info strong {
                 min-width: 120px;
-            }}
-            .legend-item {{
+            }
+            .legend-item {
                 display: block;
                 margin: 5px 0;
-            }}
-        }}
+            }
+        }
     </style>
 </head>
 <body>
     <div class="container">
         <div class="header">
             <h1>💰 Weekly Savings Update</h1>
-            <p>Week {week_number} • {formatted_date}</p>
+            <p>Week ', week_number, ' • ', formatted_date, '</p>
         </div>
         
         <div class="content">
-            <h2 class="greeting">Hello {member_name}!</h2>
+            <h2 class="greeting">Hello ', member_name, '!</h2>
             
             <div class="stats-grid">
                 <div class="stat-box savings-box">
                     <h3>This Week\'s Savings</h3>
-                    <p class="stat-value savings-value">{format_kes(current_week_total)}</p>
+                    <p class="stat-value savings-value">', current_week_formatted, '</p>
                 </div>
                 
                 <div class="stat-box month-box">
                     <h3>Month-to-Date</h3>
-                    <p class="stat-value month-value">{format_kes(month_total)}</p>
+                    <p class="stat-value month-value">', month_total_formatted, '</p>
                 </div>
             </div>
             
             <div class="payout-box">
                 <h3>🏆 Upcoming Payout</h3>
                 <div class="payout-info">
-                    <p><strong>Next Recipient:</strong> {payout_info$member}</p>
-                    <p><strong>Payout Date:</strong> {payout_date_str}</p>
-                    <p><strong>Days until payout:</strong> {days_until_str}</p>
+                    <p><strong>Next Recipient:</strong> ', payout_info$member, '</p>
+                    <p><strong>Payout Date:</strong> ', payout_date_str, '</p>
+                    <p><strong>Days until payout:</strong> ', days_until_str, '</p>
                 </div>
             </div>
             
             <div class="table-section">
                 <h3>📊 Your Savings Progress</h3>
-                {table_html}
+                ', table_html, '
                 
                 <div class="legend">
                     <span class="legend-item current-week">● Current week</span>
@@ -275,12 +279,11 @@ create_email_body <- function(member_name, weekly_table, payout_info,
         
         <div class="footer">
             <p>Savings Group • Automated Weekly Update</p>
-            <p>© {format(Sys.Date(), "%Y")}</p>
+            <p>© ', format(Sys.Date(), "%Y"), '</p>
         </div>
     </div>
 </body>
-</html>
-')
+</html>')
   
   return(html_content)
 }
@@ -434,12 +437,6 @@ run_friday_email <- function() {
       provider = 'gmail'
     )
     
-    # Test credentials first with a simple test
-    cat("Testing email credentials with simple test...\n")
-    test_email <- compose_email(
-      body = "Test email for credential verification. If you receive this, SMTP is working."
-    )
-    
     # Loop through each member and send email
     for(i in 1:nrow(members_info)) {
       member <- members_info[i, ]
@@ -461,6 +458,11 @@ run_friday_email <- function() {
             year(date) == current_year,
             month(date) == selected_month
           )
+        
+        if(nrow(dfz) == 0) {
+          cat(sprintf("  ⚠️ No data for current month for %s\n", member$sheet_name))
+          next
+        }
         
         # Create weekly summary
         weekly_data <- dfz %>%
@@ -548,9 +550,9 @@ run_friday_email <- function() {
           days_until = ifelse(nrow(next_payout) > 0, as.numeric(next_payout$Payout_Date - today), NA)
         )
         
-        # Create email body
+        # Create email body using simple function
         cat("  Creating email content...\n")
-        email_body <- create_email_body(
+        email_body <- create_email_body_simple(
           member_name = member$display_name,
           weekly_table = weekly_gt,
           payout_info = payout_info,
@@ -583,11 +585,6 @@ run_friday_email <- function() {
         
       }, error = function(e) {
         cat(sprintf("  ❌ Error processing %s: %s\n", member$display_name, e$message))
-        # Print traceback for debugging
-        if (exists("traceback")) {
-          cat("Traceback:\n")
-          print(traceback())
-        }
       })
     }
     
@@ -604,11 +601,6 @@ run_friday_email <- function() {
   }, error = function(e) {
     cat("❌ Critical error in Friday email script:\n")
     cat(e$message, "\n")
-    # Print traceback for debugging
-    if (exists("traceback")) {
-      cat("Traceback:\n")
-      print(traceback())
-    }
     return(FALSE)
   })
 }
