@@ -235,7 +235,7 @@ create_email_body <- function(member_name, weekly_table, payout_info,
             </div>
             
             <div class="payout-box">
-                <h3>🏆 Upcoming Payout</h3>
+                <h3>🏆 Upcoming Weekly Token Payout</h3>
                 <div class="payout-info">
                     <p><strong>Next Recipient:</strong> {payout_info$member}</p>
                     <p><strong>Payout Date:</strong> {ifelse(is.na(payout_info$date), "Not scheduled", format(payout_info$date, "%B %d, %Y"))}</p>
@@ -244,7 +244,7 @@ create_email_body <- function(member_name, weekly_table, payout_info,
             </div>
             
             <div class="table-section">
-                <h3>📊 Your Savings Progress</h3>
+                <h3>📊 Weekly Target Vs Your Weekly Savings Progress</h3>
                 {table_html}
                 
                 <div class="legend">
@@ -256,7 +256,7 @@ create_email_body <- function(member_name, weekly_table, payout_info,
             
             <div class="tip-box">
                 <p><strong>💡 Tip:</strong> Consistency is key! Try to save daily to meet your weekly targets.</p>
-                <p>Have questions? Contact the group administrator.</p>
+                <p>Have clarification? Contact the treasurer.</p>
             </div>
         </div>
         
@@ -517,7 +517,7 @@ run_friday_email <- function() {
       smtp_send(
         email = email_msg,
         from = Sys.getenv("MY_GMAIL_ACCOUNT"),
-        to = member$email,
+        to = "ndpptasktracker@gmail.com",
         subject = paste("💰 Weekly Savings Update - Week", isoweek(today), "|", format(today, "%B %d, %Y")),
         credentials = my_email_creds
       )
@@ -541,4 +541,5 @@ run_friday_email <- function() {
 }
 
 # Run the function
+
 run_friday_email()
