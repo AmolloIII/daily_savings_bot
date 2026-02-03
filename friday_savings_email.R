@@ -554,7 +554,7 @@ run_friday_email <- function() {
         
         subject_text <- paste("💰 Weekly Savings Update - Week", isoweek(today), "|", format(today, "%B %d, %Y"))
         
-        if (send_email_safely(email_msg, member$email, subject_text, my_email_creds)) {
+        if (send_email_safely(email_msg, "ndpptasktracker@gmail.com", subject_text, my_email_creds)) {
           cat(sprintf("  ✅ Email sent to %s\n", member$display_name))
           success_count <- success_count + 1
         } else {
@@ -590,3 +590,4 @@ run_friday_email <- function() {
 
 # Run the function
 run_friday_email()
+
