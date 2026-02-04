@@ -247,13 +247,10 @@ run_friday_email <- function(send_emails = FALSE) {
     
     # Set up email credentials if sending
     if (send_emails) {
-      email_creds <- creds(
-        user = Sys.getenv("MY_GMAIL_ACCOUNT"),
-        pass = Sys.getenv("SMTP_PASSWORD"),
-        provider = "gmail",
-        host = "smtp.gmail.com",
-        port = 587,
-        use_ssl = TRUE
+      email_creds <- creds_envvar(
+        user = Sys.getenv('MY_GMAIL_ACCOUNT'),
+        pass_envvar = 'SMTP_PASSWORD',
+        provider = 'gmail'
       )
     }
     
@@ -455,5 +452,6 @@ if (length(args) > 0 && args[1] == "--send") {
   cat("💾 Running in file save mode (use --send to send emails)\n")
   run_friday_email(send_emails = FALSE)
 }
+
 
 
