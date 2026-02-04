@@ -17,7 +17,7 @@ library(jsonlite)
 # =============================================================================
 
 # Google Sheets Auth
-sa_json <- Sys.getenv("GSHEET_CREDENTIALS")
+sa_json <- Sys.getenv("GSHEET_JSON_B64")
 tmpfile <- tempfile(fileext = ".json")
 writeLines(sa_json, tmpfile)
 gs4_auth(path = tmpfile)
@@ -153,3 +153,4 @@ for (i in 1:nrow(members_info)) {
 }
 
 cat("✅ All emails sent successfully!\n")
+
