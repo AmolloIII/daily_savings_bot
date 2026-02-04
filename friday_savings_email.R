@@ -518,40 +518,69 @@ run_friday_email <- function(send_emails = FALSE) {
         body = html(email_body)
       )
       
-      # Update the email sending section - REPLACE THIS PART:
+  
 
 if (send_emails) {
   # Set up credentials for SMTP from environment variables
   cat(sprintf("  Setting up email credentials for %s...\n", member$email))
   
-  # Create credentials ONCE and reuse them
-  if (!exists("my_email_creds")) {
-    my_email_creds <- creds_envvar(
+  # Create credentials ONCE at the beginning of the loop
+  if (!exists("email_creds", envir = globalenv())) {
+    assign("email_creds", creds_envvar(
       user = Sys.getenv('MY_GMAIL_ACCOUNT'),
       pass_envvar = 'SMTP_PASSWORD',
       provider = 'gmail'
-    )
+    ), envir = globalenv())
   }
   
-  # Send email
+  # Send email with error handling
   cat(sprintf("  Sending email to %s...\n", member$email))
   
-  # Try to send with error handling AND memory cleanup
-  tryCatch({
-    # Force garbage collection before sending
-    gc()
-    
-    smtp_send(
-      email = email_msg,
-      from = Sys.getenv("MY_GMAIL_ACCOUNT"),
-      to = member$email,
-      subject = paste("💰 Weekly Savings Update - Week", isoweek(today), "|", format(today, "%B %d, %Y")),
-      credentials = my_email_creds
-    )
+  # Try to send with retry logic
+  max_retries <- 3
+  success <- FALSE
+  
+  for (retry in 1:max_retries) {
+    tryCatch({
+      # Force garbage collection
+      gc()
+      
+      # Small delay between retries
+      if (retry > 1) {
+        cat(sprintf("    Retry attempt %d...\n", retry - 1))
+        Sys.sleep(5)
+      }
+      
+      # Send email
+      smtp_send(
+        email = email_msg,
+        from = Sys.getenv("MY_GMAIL_ACCOUNT"),
+        to = member$email,
+        subject = paste("💰 Weekly Savings Update - Week", isoweek(today), "|", format(today, "%B %d, %Y")),
+        credentials = email_creds
+      )
+      
+      success <- TRUE
+      break  # Exit retry loop on success
+      
+    }, error = function(e) {
+      cat(sprintf("    Attempt %d failed: %s\n", retry, e$message))
+    })
+  }
+  
+  if (success) {
     cat(sprintf("  ✅ Email sent to %s\n", member$display_name))
-  }, error = function(e) {
-    cat(sprintf("  ❌ Failed to send email to %s: %s\n", member$display_name, e$message))
-  })
+  } else {
+    cat(sprintf("  ❌ Failed to send email to %s after %d attempts\n", member$display_name, max_retries))
+  }
+  
+} else {
+  # Dry run - just show what would be sent
+  cat(sprintf("  📧 [DRY RUN] Email would be sent to: %s\n", member$email))
+  cat(sprintf("  Subject: Weekly Savings Update - Week %s | %s\n", 
+              isoweek(today), format(today, "%B %d, %Y")))
+  cat(sprintf("  This week's total: %s\n", format_kes(current_week_total)))
+  cat(sprintf("  Month total: %s\n", format_kes(month_total)))
 }
       
       # Add a small delay between emails to avoid rate limiting
@@ -580,5 +609,6 @@ if (send_emails) {
 
 # Run the function with command line argument
 run_friday_email(send_emails = send_emails)
+
 
 
