@@ -20,7 +20,7 @@ library(jsonlite)
 tmpfile <- tempfile(fileext = ".json")
 
 # Write the JSON from environment variable
-sa_json <- Sys.getenv("GSHEET_CREDENTIALS")
+sa_json <- Sys.getenv("GSHEET_JSON_B64")
 writeLines(sa_json, tmpfile)
 
 # Now authenticate
@@ -164,5 +164,6 @@ for (i in 1:nrow(members_info)) {
 }
 
 cat("✅ All emails sent successfully!\n")
+
 
 
