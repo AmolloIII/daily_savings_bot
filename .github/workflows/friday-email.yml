@@ -30,72 +30,56 @@ jobs:
             libfreetype6-dev \
             libpng-dev \
             libtiff5-dev \
-            libjpeg-dev \
-            libgomp1 \
-            libicu-dev \
-            libpcre2-dev
+            libjpeg-dev
 
       - name: Setup R
         uses: r-lib/actions/setup-r@v2
         with:
           r-version: '4.3.2'
 
-      - name: Install R packages (with specific versions)
+      - name: Install R packages (FROM CRAN ONLY)
         run: |
           R -e "
-          # Install packages with specific versions for stability
-          install.packages('remotes')
-          install.packages('curl', version = '5.2.0', repos = 'https://cloud.r-project.org')
-          install.packages('httr', version = '1.4.7', repos = 'https://cloud.r-project.org')
+          # Install all packages from CRAN
           install.packages(c(
             'dplyr',
             'lubridate',
             'tidyr',
             'googlesheets4',
             'gargle',
+            'blastula',
             'glue',
             'gt',
             'rlang',
-            'xml2',
-            'openssl'
+            'curl',
+            'openssl',
+            'xml2'
           ), repos = 'https://cloud.r-project.org')
           
-          # Install blastula from GitHub (more stable version)
-          remotes::install_github('rstudio/blastula')
+          # Verify blastula version
+          cat('blastula version:', packageVersion('blastula'), '\n')
+          cat('curl version:', packageVersion('curl'), '\n')
           "
           
       - name: Write Google credentials
         run: |
           echo "${{ secrets.GSHEET_JSON_B64 }}" | base64 --decode > gs.json
           
-      - name: Run Friday Savings Email (with retry)
+      - name: Run Friday Savings Email
         run: |
           echo "GitHub Event: ${{ github.event_name }}"
+          echo "Send emails input: ${{ github.event.inputs.send_emails }}"
           
           if [[ "${{ github.event_name }}" == "workflow_dispatch" && "${{ github.event.inputs.send_emails }}" == "true" ]]; then
             echo "🚀 Running with email sending enabled (manual trigger)"
             
-            # Run with error handling and retry
-            for attempt in {1..3}; do
-              echo "Attempt $attempt of 3..."
-              if Rscript friday_savings_email.R --send; then
-                echo "✅ Script completed successfully"
-                break
-              else
-                echo "⚠️ Script failed, attempt $attempt"
-                if [ $attempt -lt 3 ]; then
-                  echo "Waiting 10 seconds before retry..."
-                  sleep 10
-                else
-                  echo "❌ All attempts failed"
-                  exit 1
-                fi
-              fi
-            done
+            # Run with error handling and memory limits
+            Rscript -e "options(timeout = 600)" friday_savings_email.R --send
             
           elif [[ "${{ github.event_name }}" == "schedule" ]]; then
             echo "⏰ Running with email sending enabled (scheduled run)"
-            Rscript friday_savings_email.R --send
+            Rscript -e "options(timeout = 600)" friday_savings_email.R --send
+            
           else
             echo "💾 Running in file save mode (dry run)"
             Rscript friday_savings_email.R
@@ -104,11 +88,3 @@ jobs:
           GSHEET_JSON_B64: ${{ secrets.GSHEET_JSON_B64 }}
           MY_GMAIL_ACCOUNT: ${{ secrets.MY_GMAIL_ACCOUNT }}
           SMTP_PASSWORD: ${{ secrets.SMTP_PASSWORD }}
-          
-      - name: Check for segmentation faults
-        if: always()
-        run: |
-          if [ -f core.* ]; then
-            echo "⚠️ Segmentation fault core dump found"
-            echo "This indicates a serious error in the R/C libraries"
-          fi
