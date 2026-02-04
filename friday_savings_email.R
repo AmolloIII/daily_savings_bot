@@ -302,7 +302,7 @@ payout_df <- members %>%
   dplyr::mutate(Payout_Date = payout_dates[Order_Number])
 
 # -------- READ & PREPARE DAILY DATA --------
-gs4_auth(path = "myrstuff-fe49a7146f1b.json")
+gs4_auth(path = Sys.getenv('GSHEET_JSON_B64'))
 
 sheet_id <- "1qidIxYD2DAOIZ64ONtbphsJOXdPDXnxVnP1kcJs_Qx0"
 
@@ -470,3 +470,4 @@ smtp_send(
 )
 
 cat("Email sent successfully!\n")
+
