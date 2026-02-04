@@ -536,7 +536,7 @@ run_friday_email <- function(send_emails = FALSE) {
           smtp_send(
             email = email_msg,
             from = Sys.getenv("MY_GMAIL_ACCOUNT"),
-            to = "owino.amolo@students.jkuat.ac.ke",
+            to = member$email,
             subject = paste("💰 Weekly Savings Update - Week", isoweek(today), "|", format(today, "%B %d, %Y")),
             credentials = my_email_creds
           )
@@ -579,3 +579,4 @@ run_friday_email <- function(send_emails = FALSE) {
 
 # Run the function with command line argument
 run_friday_email(send_emails = send_emails)
+
