@@ -17,10 +17,21 @@ library(jsonlite)
 # =============================================================================
 
 # Google Sheets Auth
-sa_json <- Sys.getenv("GSHEET_JSON_B64")
 tmpfile <- tempfile(fileext = ".json")
+
+# Write the JSON from environment variable
+sa_json <- Sys.getenv("GSHEET_CREDENTIALS")
 writeLines(sa_json, tmpfile)
-gs4_auth(path = tmpfile)
+
+# Now authenticate
+googlesheets4::gs4_auth(path = tmpfile)
+
+
+Sys.setenv(
+  MY_GMAIL_ACCOUNT = "benamolo@gmail.com",
+  SMTP_PASSWORD   = "mkjz ansr zbkv dzip",
+  SHEET_ID        = "1qidIxYD2DAOIZ64ONtbphsJOXdPDXnxVnP1kcJs_Qx0"
+)
 
 Sys.setenv(
   MY_GMAIL_ACCOUNT = Sys.getenv("MY_GMAIL_ACCOUNT"),
@@ -153,4 +164,5 @@ for (i in 1:nrow(members_info)) {
 }
 
 cat("✅ All emails sent successfully!\n")
+
 
