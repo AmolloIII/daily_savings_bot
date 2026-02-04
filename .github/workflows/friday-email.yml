@@ -48,10 +48,24 @@ jobs:
             echo "⏰ Running with email sending enabled (scheduled run)"
             Rscript friday_savings_email.R --send
           else
-            echo "💾 Running in file save mode"
+            echo "💾 Running in file save mode (dry run)"
             Rscript friday_savings_email.R
           fi
         env:
           GSHEET_JSON_B64: ${{ secrets.GSHEET_JSON_B64 }}
           MY_GMAIL_ACCOUNT: ${{ secrets.MY_GMAIL_ACCOUNT }}
           SMTP_PASSWORD: ${{ secrets.SMTP_PASSWORD }}
+          
+      - name: Save log on failure
+        if: failure()
+        run: |
+          mkdir -p logs
+          echo "Workflow failed at $(date)" > logs/error.log
+          echo "Event: ${{ github.event_name }}" >> logs/error.log
+          echo "Repository: ${{ github.repository }}" >> logs/error.log
+          
+      - uses: actions/upload-artifact@v3
+        if: failure()
+        with:
+          name: error-logs
+          path: logs/
