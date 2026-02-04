@@ -114,9 +114,10 @@ payout_info <- list(member=next_payout$display_name, date=next_payout$Payout_Dat
 email_body <- create_email_body(member$display_name, weekly_gt, payout_info, current_week_total, month_total, today)
 email_msg <- compose_email(body=html(email_body))
 
-my_email_creds <- creds_envvar(user=Sys.getenv('MY_GMAIL_ACCOUNT'), pass_envvar='SMTP_PASSWORD', provider='gmail', use_ssl=FALSE)
+my_email_creds <- creds_envvar(user=Sys.getenv('MY_GMAIL_ACCOUNT'), pass_envvar='SMTP_PASSWORD', provider='gmail', use_ssl=TRUE)
 
 cat("Sending email to", recipient_email, "...\n")
 smtp_send(email_msg, from=Sys.getenv('MY_GMAIL_ACCOUNT'), to=recipient_email,
           subject=paste("💰 Weekly Savings Update - Week", isoweek(today)), credentials=my_email_creds, port=587)
 cat("✅ Email sent to", recipient_email, "\n")
+
