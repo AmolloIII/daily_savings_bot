@@ -177,7 +177,7 @@ test_email_credentials <- function() {
         user = Sys.getenv('MY_GMAIL_ACCOUNT'),
         pass_envvar = 'SMTP_PASSWORD',
         provider = 'gmail'
-      ))
+      )
     
     # Try to create a simple test email
     test_email <- compose_email(
@@ -455,4 +455,5 @@ if (length(args) > 0 && args[1] == "--send") {
   cat("💾 Running in file save mode (use --send to send emails)\n")
   run_friday_email(send_emails = FALSE)
 }
+
 
