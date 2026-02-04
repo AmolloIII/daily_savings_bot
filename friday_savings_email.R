@@ -518,20 +518,22 @@ run_friday_email <- function() {
       
       # Set up credentials for SMTP
       my_email_creds <- creds_envvar(
-        user = Sys.getenv('MY_GMAIL_ACCOUNT'),
-        pass_envvar = 'SMTP_PASSWORD',
-        provider = 'gmail'
-      )
+  user = Sys.getenv('MY_GMAIL_ACCOUNT'),
+  pass_envvar = 'SMTP_PASSWORD',
+  provider = 'gmail',
+  use_ssl = FALSE
+)
       
       # Send email
       cat(sprintf("  Sending email to %s...\n", member$email))
       smtp_send(
-        email = email_msg,
-        from = Sys.getenv("MY_GMAIL_ACCOUNT"),
-        to = "amollozeethird@gmail.com",
-        subject = paste("💰 Weekly Savings Update - Week", isoweek(today), "|", format(today, "%B %d, %Y")),
-        credentials = my_email_creds
-      )
+  email = email_msg,
+  from = Sys.getenv("MY_GMAIL_ACCOUNT"),
+  to = member$email,
+  subject = paste("💰 Weekly Savings Update - Week", isoweek(today), "|", format(today, "%B %d, %Y")),
+  credentials = my_email_creds,
+  port = 587
+)
       
       cat(sprintf("  ✅ Email sent to %s\n", member$display_name))
       
@@ -553,3 +555,4 @@ run_friday_email <- function() {
 
 # Run the function
 run_friday_email()
+
