@@ -37,13 +37,13 @@ jobs:
         with:
           r-version: '4.3.2'
 
-      - name: Install R packages (FROM CRAN ONLY)
+      - name: Install R packages
         run: |
           R -e "
-          # Install all packages from CRAN
-          install.packages(c(
+          # Install all required packages
+          packages <- c(
             'dplyr',
-            'lubridate',
+            'lubridate', 
             'tidyr',
             'googlesheets4',
             'gargle',
@@ -54,11 +54,19 @@ jobs:
             'curl',
             'openssl',
             'xml2'
-          ), repos = 'https://cloud.r-project.org')
+          )
           
-          # Verify blastula version
-          cat('blastula version:', packageVersion('blastula'), '\n')
-          cat('curl version:', packageVersion('curl'), '\n')
+          # Install packages one by one to catch any failures
+          for (pkg in packages) {
+            cat('Installing', pkg, '...\n')
+            install.packages(pkg, repos = 'https://cloud.r-project.org')
+          }
+          
+          # Check versions
+          cat('Package versions:\n')
+          cat('blastula:', as.character(packageVersion('blastula')), '\n')
+          cat('curl:', as.character(packageVersion('curl')), '\n')
+          cat('All packages installed successfully!\n')
           "
           
       - name: Write Google credentials
@@ -72,14 +80,10 @@ jobs:
           
           if [[ "${{ github.event_name }}" == "workflow_dispatch" && "${{ github.event.inputs.send_emails }}" == "true" ]]; then
             echo "🚀 Running with email sending enabled (manual trigger)"
-            
-            # Run with error handling and memory limits
-            Rscript -e "options(timeout = 600)" friday_savings_email.R --send
-            
+            Rscript friday_savings_email.R --send
           elif [[ "${{ github.event_name }}" == "schedule" ]]; then
             echo "⏰ Running with email sending enabled (scheduled run)"
-            Rscript -e "options(timeout = 600)" friday_savings_email.R --send
-            
+            Rscript friday_savings_email.R --send
           else
             echo "💾 Running in file save mode (dry run)"
             Rscript friday_savings_email.R
