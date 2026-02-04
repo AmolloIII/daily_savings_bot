@@ -1,123 +1,155 @@
-# friday_savings_email.R
-# Usage: Rscript friday_savings_email.R --recipient="email@example.com"
+# =============================================================================
+# FRIDAY SAVINGS EMAIL – SAFE VERSION WITH GT CHARTS AS ATTACHMENTS
+# =============================================================================
 
-args <- commandArgs(trailingOnly = TRUE)
-recipient_email <- sub("--recipient=", "", args[grepl("--recipient=", args)])
-
-if(length(recipient_email) == 0) stop("Please provide --recipient argument")
-
-Sys.setenv(
-  MY_GMAIL_ACCOUNT = Sys.getenv('MY_GMAIL_ACCOUNT'),
-  SMTP_PASSWORD    = Sys.getenv('SMTP_PASSWORD')
-)
-
-library(tidyr)
+library(googlesheets4)
+library(dplyr)
 library(lubridate)
 library(gt)
-library(dplyr)
-library(googlesheets4)
-library(blastula)
+library(webshot2)
 library(glue)
+library(blastula)
+library(htmltools)
+library(jsonlite)
 
-# --- Helper functions ---
-format_kes <- function(x) paste0("KES ", format(round(x,2), big.mark = ",", nsmall = 2))
+# =============================================================================
+# CONFIG
+# =============================================================================
 
-create_email_body <- function(member_name, weekly_table, payout_info, current_week_total, month_total, current_date){
-  week_number <- isoweek(current_date)
-  formatted_date <- format(current_date, "%A, %B %d, %Y")
-  table_html <- gt::as_raw_html(weekly_table)
-  
-  glue::glue('<html><body>
-<h2>Hello {member_name}!</h2>
-<p>This Week: {format_kes(current_week_total)}</p>
-<p>Month-to-date: {format_kes(month_total)}</p>
-<p>Next payout: {payout_info$member} on {ifelse(is.na(payout_info$date),"Not scheduled",format(payout_info$date,"%B %d, %Y"))}</p>
-{table_html}
-</body></html>')
-}
+# Google Sheets Auth
+sa_json <- Sys.getenv("GSHEET_CREDENTIALS")
+tmpfile <- tempfile(fileext = ".json")
+writeLines(sa_json, tmpfile)
+gs4_auth(path = tmpfile)
 
-# --- Member info ---
-members_info <- data.frame(
-  sheet_name = c("Ben Amollo","Shabir Odhiambo","Arthur Mbatia","Stephen Katana","James Nyaga","Collins Korir","Meshack Ngava","Orvile Oreener","George Njoroge","Dan Njenga"),
-  display_name = c("Ben Amollo","Shabir","Kanyanjua","Katz","Mutugi Nyaga","Kolo","Ngava","Double O","Njoro","Wakajiado3"),
-  email = c("amollozeethird@gmail.com","ayoubshabir@gmail.com","aspkenya@gmail.com","lamiri93@gmail.com","mutugiwanyaga24@gmail.com","korayalakwen@gmail.com","ngavamuumbi@outlook.com","orvillenyandoro@gmail.com","gnjoro9@gmail.com","danielkaroga@gmail.com"),
-  order_number = c(10,8,1,9,7,5,2,4,3,6),
-  stringsAsFactors = FALSE
+Sys.setenv(
+  MY_GMAIL_ACCOUNT = Sys.getenv("MY_GMAIL_ACCOUNT"),
+  SMTP_PASSWORD   = Sys.getenv("SMTP_PASSWORD"),
+  SHEET_ID        = Sys.getenv("SHEET_ID")
 )
 
-get_member_data <- function(member_name, member_daily_long) {
-  member_daily_long %>%
-    filter(Name == member_name) %>%
-    head(366) %>%
-    mutate(
-      date = as.Date(date),
-      day_in_month = day(date),
-      target = day_in_month * 15,
-      week_start = floor_date(date, "week", week_start = 1),
-      week_end = week_start + days(6)
-    ) %>%
-    arrange(date)
-}
+# =============================================================================
+# LOAD DATA
+# =============================================================================
 
-# --- MAIN EXECUTION ---
-cat("Starting email for", recipient_email, "...\n")
+daily_data <- read_sheet(Sys.getenv("SHEET_ID"), sheet = "Member Contributions") %>%
+  filter(!Name %in% c("Total Contributions", "Banked"))
 
-# Google Sheets auth
-if(file.exists("gs.json")) gs4_auth(path="gs.json") else gs4_auth()
-sheet_id <- "1qidIxYD2DAOIZ64ONtbphsJOXdPDXnxVnP1kcJs_Qx0"
-daily_dataz <- read_sheet(sheet_id, sheet="Member Contributions") %>%
-  filter(!Name %in% c("Total Contributions","Banked"))
-
-member_daily_long <- daily_dataz %>%
-  pivot_longer(cols = matches("^\\d{1,2}/\\d{1,2}/\\d{4}$"), names_to="date", values_to="actual") %>%
-  mutate(date=dmy(date), actual=replace_na(actual,0)) %>%
-  arrange(Name,date)
+# Convert to long format for plotting
+member_long <- daily_data %>%
+  pivot_longer(
+    cols = matches("^\\d{1,2}/\\d{1,2}/\\d{4}$"),
+    names_to = "date",
+    values_to = "actual"
+  ) %>%
+  mutate(
+    date = lubridate::dmy(date),
+    actual = replace_na(actual, 0)
+  )
 
 today <- Sys.Date()
-selected_month <- month(today)
-current_year <- year(today)
-current_week_start <- floor_date(today,"week",week_start=1)
+current_week_start <- floor_date(today, "week", week_start = 1)
 
-member <- members_info %>% filter(email == recipient_email)
-member_data <- get_member_data(member$sheet_name, member_daily_long)
+# Example: assign payout dates per member
+payout_dates <- today + weeks(1:10)
+members_info <- daily_data %>%
+  select(Name) %>%
+  mutate(
+    display_name = Name,
+    Payout_Date = payout_dates[1:n()],
+    order_number = row_number()
+  )
 
-# Filter month, weekly summary
-dfz <- member_data %>% filter(year(date)==current_year, month(date)==selected_month)
-weekly_data <- dfz %>% group_by(week_start, week_end) %>%
-  summarise(Target=sum(target), Actual=sum(actual), .groups="drop") %>%
-  arrange(week_start) %>%
-  mutate(Week=row_number(),
-         Start_Date=format(week_start,"%d %b"),
-         End_Date=format(week_end,"%d %b"),
-         Week_Status = case_when(
-           week_start < current_week_start ~ "past",
-           week_start == current_week_start ~ "current",
-           TRUE ~ "future"
-         ))
+# =============================================================================
+# CREATE GT TABLE + SAVE AS IMAGE
+# =============================================================================
 
-weekly_gt <- weekly_data %>%
-  select(Week, Start_Date, End_Date, Target, Actual, Week_Status) %>%
-  gt() %>%
-  fmt_currency(columns=c(Target,Actual), currency="KES", decimals=0) %>%
-  cols_hide("Week_Status")
+save_gt_table_image <- function(member_name, member_data) {
+  weekly_summary <- member_data %>%
+    group_by(Name) %>%
+    summarise(
+      TotalSaved = sum(actual, na.rm = TRUE),
+      .groups = "drop"
+    ) %>%
+    arrange(desc(TotalSaved))
 
-current_week_total <- sum(dfz$actual[dfz$week_start == current_week_start])
-month_total <- sum(dfz$actual)
+  gt_tbl <- weekly_summary %>%
+    gt() %>%
+    tab_header(title = glue("💰 Weekly Savings Summary – {member_name}")) %>%
+    fmt_currency(columns = TotalSaved, currency = "KES", decimals = 0) %>%
+    cols_label(TotalSaved = "Total Saved")
 
-# Next payout
-payout_dates <- as.Date(c("2026-02-08","2026-02-15","2026-02-22","2026-03-01","2026-03-08","2026-03-15","2026-03-22","2026-03-29","2026-04-05","2026-04-12"))
-payout_df <- members_info %>% arrange(order_number) %>% mutate(Payout_Date=payout_dates[order_number])
-next_payout <- payout_df %>% filter(Payout_Date>=today) %>% slice(1)
-payout_info <- list(member=next_payout$display_name, date=next_payout$Payout_Date, days_until=as.numeric(next_payout$Payout_Date-today))
+  # Save as PNG
+  img_file <- tempfile(fileext = ".png")
+  gtsave(gt_tbl, filename = img_file)
+  img_file
+}
 
-# Compose & send
-email_body <- create_email_body(member$display_name, weekly_gt, payout_info, current_week_total, month_total, today)
-email_msg <- compose_email(body=html(email_body))
+# =============================================================================
+# CREATE EMAIL
+# =============================================================================
 
-my_email_creds <- creds_envvar(user=Sys.getenv('MY_GMAIL_ACCOUNT'), pass_envvar='SMTP_PASSWORD', provider='gmail', use_ssl=TRUE)
+create_email_body <- function(member_name, current_week_total, month_total, payout_info) {
+  glue("
+  <div style='font-family:Arial,sans-serif;max-width:800px;margin:auto;'>
 
-cat("Sending email to", recipient_email, "...\n")
-smtp_send(email_msg, from=Sys.getenv('MY_GMAIL_ACCOUNT'), to=recipient_email,
-          subject=paste("💰 Weekly Savings Update - Week", isoweek(today)), credentials=my_email_creds, port=587)
-cat("✅ Email sent to", recipient_email, "\n")
+    <h2 style='background:#5e60ce;color:#fff;padding:15px;text-align:center;'>
+      💰 Weekly Savings Update – {member_name}
+    </h2>
 
+    <p><strong>Current Week Total:</strong> KES {current_week_total}</p>
+    <p><strong>Month Total:</strong> KES {month_total}</p>
+    <p><strong>Next Payout:</strong> {payout_info$member} on {payout_info$date} ({payout_info$days_until} days away)</p>
+
+    <p>See attached chart for weekly breakdown.</p>
+
+    <p style='margin-top:30px;font-size:12px;color:#666;'>Generated on {Sys.Date()}</p>
+  </div>
+  ")
+}
+
+# =============================================================================
+# SEND EMAIL
+# =============================================================================
+
+send_member_email <- function(member_name, member_email, member_data) {
+  # Create table image
+  table_img <- save_gt_table_image(member_name, member_data)
+
+  current_week_total <- sum(member_data$actual[member_data$date >= current_week_start], na.rm = TRUE)
+  month_total <- sum(member_data$actual[month(member_data$date) == month(today)], na.rm = TRUE)
+  payout_info <- list(member = member_name, date = today + 7, days_until = 7)
+
+  email_body <- compose_email(
+    body = html(create_email_body(member_name, current_week_total, month_total, payout_info))
+  ) %>%
+    add_attachment(file = table_img, filename = "weekly_savings.png")
+
+  my_email_creds <- creds_envvar(
+    user = Sys.getenv("MY_GMAIL_ACCOUNT"),
+    pass_envvar = "SMTP_PASSWORD",
+    provider = "gmail"
+  )
+
+  smtp_send(
+    email = email_body,
+    from = Sys.getenv("MY_GMAIL_ACCOUNT"),
+    to = "amollozeethird@gmail.com",
+    subject = glue("💰 Weekly Savings Update – Week {isoweek(today)}"),
+    credentials = my_email_creds
+  )
+}
+
+# =============================================================================
+# LOOP THROUGH MEMBERS
+# =============================================================================
+
+for (i in 1:nrow(members_info)) {
+  member <- members_info[i, ]
+  member_data <- member_long %>% filter(Name == member$Name)
+  cat(sprintf("Sending email for %s (%s)...\n", member$display_name, member$Name))
+  send_member_email(member$display_name, member$Name, member_data)
+  Sys.sleep(2)
+}
+
+cat("✅ All emails sent successfully!\n")
