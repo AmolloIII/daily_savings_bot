@@ -6,7 +6,7 @@ on:
       send_emails:
         description: 'Send emails (true/false)'
         required: false
-        default: 'false'
+        default: false
         type: boolean
   schedule:
     - cron: '0 16 * * 5'  # Friday 7 PM Kenya time = 16:00 UTC (Friday)
@@ -38,11 +38,17 @@ jobs:
           
       - name: Run Friday Savings Email
         run: |
-          if [ "${{ github.event_name }}" == "workflow_dispatch" ] && [ "${{ github.event.inputs.send_emails }}" == "true" ]; then
-            echo "Running with email sending enabled"
+          echo "GitHub Event: ${{ github.event_name }}"
+          echo "Send emails input: ${{ github.event.inputs.send_emails }}"
+          
+          if [[ "${{ github.event_name }}" == "workflow_dispatch" && "${{ github.event.inputs.send_emails }}" == "true" ]]; then
+            echo "🚀 Running with email sending enabled (manual trigger)"
+            Rscript friday_savings_email.R --send
+          elif [[ "${{ github.event_name }}" == "schedule" ]]; then
+            echo "⏰ Running with email sending enabled (scheduled run)"
             Rscript friday_savings_email.R --send
           else
-            echo "Running in file save mode (default)"
+            echo "💾 Running in file save mode"
             Rscript friday_savings_email.R
           fi
         env:
