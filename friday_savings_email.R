@@ -1,30 +1,19 @@
 # friday_savings_email.R
 # Weekly savings email script - Runs on Fridays at 7 PM Kenya time (16:00 UTC)
 
-# Parse command line arguments
-args <- commandArgs(trailingOnly = TRUE)
-send_emails <- "--send" %in% args
-
-cat("Send emails mode:", send_emails, "\n")
-
-# Set memory and timeout options upfront to prevent crashes
-options(timeout = 600)  # 10 minute timeout
-options(warn = 1)  # Show warnings immediately
-
-# Load required packages with error handling
-cat("Loading required packages...\n")
-required_packages <- c(
-  "dplyr", "lubridate", "tidyr", "googlesheets4", 
-  "gargle", "blastula", "glue", "gt"
+Sys.setenv(
+  MY_GMAIL_ACCOUNT = Sys.getenv('MY_GMAIL_ACCOUNT'),
+  SMTP_PASSWORD    = Sys.getenv('SMTP_PASSWORD')
 )
 
-for (pkg in required_packages) {
-  if (!require(pkg, character.only = TRUE, quietly = TRUE)) {
-    cat("ERROR: Package", pkg, "is not installed\n")
-    quit(status = 1)
-  }
-  cat("  Loaded:", pkg, "\n")
-}
+# Load required packages
+library(tidyr)
+library(lubridate)
+library(gt)
+library(dplyr)
+library(googlesheets4)
+library(blastula)
+library(glue)
 
 # Helper function to format currency
 format_kes <- function(x) {
@@ -35,14 +24,317 @@ format_kes <- function(x) {
   }
 }
 
-# (Keep all your existing functions: create_email_body, members_info, get_member_data)
-# ... [PASTE ALL YOUR EXISTING FUNCTIONS HERE] ...
+#' Create HTML email body with proper structure
+create_email_body <- function(member_name, weekly_table, payout_info, 
+                              current_week_total, month_total, current_date) {
+  
+  week_number <- isoweek(current_date)
+  formatted_date <- format(current_date, "%A, %B %d, %Y")
+  
+  # Convert gt table to HTML string
+  table_html <- gt::as_raw_html(weekly_table)
+  
+  # Create the complete HTML email
+  html_content <- glue::glue('
+<!DOCTYPE html>
+<html>
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Weekly Savings Update</title>
+    <style>
+        body {{
+            font-family: Arial, sans-serif;
+            line-height: 1.6;
+            color: #333;
+            margin: 0;
+            padding: 0;
+            background-color: #f4f4f4;
+        }}
+        .container {{
+            max-width: 600px;
+            margin: 0 auto;
+            background-color: #ffffff;
+        }}
+        .header {{
+            background-color: #4CAF50;
+            color: white;
+            padding: 25px;
+            text-align: center;
+            border-radius: 5px 5px 0 0;
+        }}
+        .header h1 {{
+            margin: 0;
+            font-size: 24px;
+        }}
+        .header p {{
+            margin: 10px 0 0 0;
+            font-size: 16px;
+            opacity: 0.9;
+        }}
+        .content {{
+            padding: 25px;
+        }}
+        .greeting {{
+            color: #333;
+            border-bottom: 2px solid #4CAF50;
+            padding-bottom: 15px;
+            margin-bottom: 20px;
+            font-size: 20px;
+        }}
+        .stats-grid {{
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(250px, 1fr));
+            gap: 20px;
+            margin: 25px 0;
+        }}
+        .stat-box {{
+            padding: 20px;
+            border-radius: 8px;
+            text-align: center;
+            box-shadow: 0 2px 4px rgba(0,0,0,0.1);
+        }}
+        .savings-box {{
+            background-color: #e8f5e9;
+            border-left: 4px solid #2e7d32;
+        }}
+        .month-box {{
+            background-color: #e3f2fd;
+            border-left: 4px solid #1565c0;
+        }}
+        .stat-box h3 {{
+            margin: 0 0 10px 0;
+            font-size: 16px;
+            color: #333;
+        }}
+        .stat-value {{
+            font-size: 28px;
+            font-weight: bold;
+            margin: 0;
+        }}
+        .savings-value {{
+            color: #1b5e20;
+        }}
+        .month-value {{
+            color: #0d47a1;
+        }}
+        .payout-box {{
+            background-color: #fff3e0;
+            border-left: 4px solid #e65100;
+            padding: 20px;
+            border-radius: 8px;
+            margin: 25px 0;
+        }}
+        .payout-box h3 {{
+            color: #e65100;
+            margin: 0 0 15px 0;
+            font-size: 18px;
+        }}
+        .payout-info p {{
+            margin: 8px 0;
+            font-size: 16px;
+            line-height: 1.5;
+        }}
+        .payout-info strong {{
+            display: inline-block;
+            min-width: 140px;
+            color: #555;
+        }}
+        .table-section {{
+            margin: 30px 0;
+            overflow-x: auto;
+        }}
+        .table-section h3 {{
+            color: #333;
+            margin-bottom: 15px;
+            font-size: 18px;
+        }}
+        .legend {{
+            margin-top: 15px;
+            font-size: 13px;
+            color: #666;
+            text-align: center;
+            padding: 10px;
+            background-color: #f9f9f9;
+            border-radius: 4px;
+        }}
+        .legend-item {{
+            display: inline-block;
+            margin: 0 15px;
+        }}
+        .current-week {{
+            color: #2e7d32;
+            font-weight: bold;
+        }}
+        .past-week {{
+            color: #dc3545;
+        }}
+        .future-week {{
+            color: #6c757d;
+        }}
+        .tip-box {{
+            background-color: #f5f5f5;
+            padding: 20px;
+            border-radius: 8px;
+            margin-top: 25px;
+            font-size: 14px;
+            color: #555;
+            border-left: 4px solid #6c757d;
+        }}
+        .tip-box p {{
+            margin: 0 0 10px 0;
+        }}
+        .tip-box p:last-child {{
+            margin-bottom: 0;
+        }}
+        .footer {{
+            text-align: center;
+            padding: 20px;
+            color: #777;
+            font-size: 12px;
+            border-top: 1px solid #eee;
+            background-color: #f9f9f9;
+        }}
+        @media (max-width: 600px) {{
+            .stats-grid {{
+                grid-template-columns: 1fr;
+            }}
+            .content {{
+                padding: 15px;
+            }}
+            .payout-info strong {{
+                min-width: 120px;
+            }}
+            .legend-item {{
+                display: block;
+                margin: 5px 0;
+            }}
+        }}
+    </style>
+</head>
+<body>
+    <div class="container">
+        <div class="header">
+            <h1>💰 Weekly Savings Update</h1>
+            <p>Week {week_number} • {formatted_date}</p>
+        </div>
+        
+        <div class="content">
+            <h2 class="greeting">Hello {member_name}!</h2>
+            
+            <div class="stats-grid">
+                <div class="stat-box savings-box">
+                    <h3>This Week\'s Savings</h3>
+                    <p class="stat-value savings-value">{format_kes(current_week_total)}</p>
+                </div>
+                
+                <div class="stat-box month-box">
+                    <h3>Month-to-Date</h3>
+                    <p class="stat-value month-value">{format_kes(month_total)}</p>
+                </div>
+            </div>
+            
+            <div class="payout-box">
+                <h3>🏆 Upcoming Payout</h3>
+                <div class="payout-info">
+                    <p><strong>Next Recipient:</strong> {payout_info$member}</p>
+                    <p><strong>Payout Date:</strong> {ifelse(is.na(payout_info$date), "Not scheduled", format(payout_info$date, "%B %d, %Y"))}</p>
+                    <p><strong>Days until payout:</strong> {ifelse(is.na(payout_info$days_until), "-", payout_info$days_until)}</p>
+                </div>
+            </div>
+            
+            <div class="table-section">
+                <h3>📊 Your Savings Progress</h3>
+                {table_html}
+                
+                <div class="legend">
+                    <span class="legend-item current-week">● Current week</span>
+                    <span class="legend-item past-week">● Past weeks</span>
+                    <span class="legend-item future-week">● Upcoming weeks</span>
+                </div>
+            </div>
+            
+            <div class="tip-box">
+                <p><strong>💡 Tip:</strong> Consistency is key! Try to save daily to meet your weekly targets.</p>
+                <p>Have questions? Contact the group administrator.</p>
+            </div>
+        </div>
+        
+        <div class="footer">
+            <p>Savings Group • Automated Weekly Update</p>
+            <p>© {format(Sys.Date(), "%Y")}</p>
+        </div>
+    </div>
+</body>
+</html>
+')
+  
+  return(html_content)
+}
 
-# Main execution function with FIXED email sending
-run_friday_email <- function(send_emails = FALSE) {
+# Member information mapping
+members_info <- data.frame(
+  sheet_name = c(
+    "Ben Amollo",
+    "Shabir Odhiambo", 
+    "Arthur Mbatia",
+    "Stephen Katana",
+    "James Nyaga",
+    "Collins Korir",
+    "Meshack Ngava",
+    "Orvile Oreener",
+    "George Njoroge",
+    "Dan Njenga"
+  ),
+  display_name = c(
+    "Ben Amollo",
+    "Shabir",
+    "Kanyanjua",
+    "Katz",
+    "Mutugi Nyaga",
+    "Kolo",
+    "Ngava",
+    "Double O",
+    "Njoro",
+    "Wakajiado3"
+  ),
+  email = c(
+    "amollozeethird@gmail.com",
+    "ayoubshabir@gmail.com",
+    "aspkenya@gmail.com",
+    "lamiri93@gmail.com",
+    "mutugiwanyaga24@gmail.com",
+    "korayalakwen@gmail.com",
+    "ngavamuumbi@outlook.com",
+    "orvillenyandoro@gmail.com",
+    "gnjoro9@gmail.com",
+    "danielkaroga@gmail.com"
+  ),
+  order_number = c(10, 8, 1, 9, 7, 5, 2, 4, 3, 6),
+  stringsAsFactors = FALSE
+)
+
+# Function to get member-specific data
+get_member_data <- function(member_name, member_daily_long) {
+  member_data <- member_daily_long %>% 
+    filter(Name == member_name) %>% 
+    head(366) %>%
+    mutate(
+      date = as.Date(date),
+      day_in_month = day(date),
+      target = day_in_month * 15,
+      week_start = floor_date(date, "week", week_start = 1),
+      week_end   = week_start + days(6)
+    ) %>%
+    arrange(date)
+  
+  return(member_data)
+}
+
+# Main execution function
+run_friday_email <- function() {
   tryCatch({
     cat("Starting Friday email script...\n")
-    cat("Mode:", ifelse(send_emails, "SENDING EMAILS", "TEST/DRY RUN"), "\n")
     
     # Create payout dates (in order)
     payout_dates <- as.Date(
@@ -61,8 +353,7 @@ run_friday_email <- function(send_emails = FALSE) {
     
     # -------- READ & PREPARE DAILY DATA --------
     cat("Authenticating with Google Sheets...\n")
-    
-    # Check for Google credentials file
+      # Check for Google credentials file
     if (file.exists("gs.json")) {
       cat("Using gs.json for authentication\n")
       gs4_auth(path = "gs.json")
@@ -73,6 +364,7 @@ run_friday_email <- function(send_emails = FALSE) {
       cat("No Google credentials found. Using default authentication\n")
       gs4_auth()
     }
+    
     
     sheet_id <- "1qidIxYD2DAOIZ64ONtbphsJOXdPDXnxVnP1kcJs_Qx0"
     
@@ -101,7 +393,7 @@ run_friday_email <- function(send_emails = FALSE) {
     current_year   <- year(today)
     current_week_start <- floor_date(today, "week", week_start = 1)
     
-    # Loop through each member
+    # Loop through each member and send email
     for(i in 1:nrow(members_info)) {
       member <- members_info[i, ]
       
@@ -219,98 +511,45 @@ run_friday_email <- function(send_emails = FALSE) {
         current_date = today
       )
       
-      if (send_emails) {
-        # Create email message
-        email_msg <- blastula::compose_email(
-          body = blastula::html(email_body)
-        )
-        
-        cat(sprintf("  Sending email to %s...\n", member$email))
-        
-        # SAFE EMAIL SENDING FUNCTION - FIXED VERSION
-        safe_send_email <- function() {
-          tryCatch({
-            # Force garbage collection to prevent memory issues
-            gc()
-            
-            # Create fresh credentials for each email (prevents segfault)
-            my_email_creds <- blastula::creds_envvar(
-              user = Sys.getenv('MY_GMAIL_ACCOUNT'),
-              pass_envvar = 'SMTP_PASSWORD',
-              provider = 'gmail'
-            )
-            
-            # Send email with minimal options
-            blastula::smtp_send(
-              email = email_msg,
-              from = Sys.getenv("MY_GMAIL_ACCOUNT"),
-              to = member$email,
-              subject = paste("💰 Weekly Savings Update - Week", 
-                            isoweek(today), "|", format(today, "%B %d, %Y")),
-              credentials = my_email_creds
-            )
-            
-            return(TRUE)
-          }, error = function(e) {
-            cat(sprintf("    Error: %s\n", e$message))
-            return(FALSE)
-          })
-        }
-        
-        # Try to send with retries
-        max_retries <- 3
-        success <- FALSE
-        
-        for (retry in 1:max_retries) {
-          if (retry > 1) {
-            cat(sprintf("    Retry %d of %d...\n", retry - 1, max_retries - 1))
-            Sys.sleep(5)  # Wait before retry
-          }
-          
-          success <- safe_send_email()
-          if (success) {
-            cat(sprintf("  ✅ Email sent to %s\n", member$display_name))
-            break
-          }
-        }
-        
-        if (!success) {
-          cat(sprintf("  ❌ Failed to send email to %s after %d attempts\n", 
-                     member$display_name, max_retries))
-        }
-        
-      } else {
-        # Dry run
-        cat(sprintf("  📧 [DRY RUN] Email would be sent to: %s\n", member$email))
-        cat(sprintf("  Subject: Weekly Savings Update - Week %s | %s\n", 
-                    isoweek(today), format(today, "%B %d, %Y")))
-        cat(sprintf("  This week's total: %s\n", format_kes(current_week_total)))
-        cat(sprintf("  Month total: %s\n", format_kes(month_total)))
-      }
+      # Create email message
+      email_msg <- compose_email(
+        body = html(email_body)
+      )
       
-      # Add delay between emails to prevent rate limiting
-      if(send_emails && i < nrow(members_info)) {
-        Sys.sleep(3)
+      # Set up credentials for SMTP
+      my_email_creds <- creds_envvar(
+        user = Sys.getenv('MY_GMAIL_ACCOUNT'),
+        pass_envvar = 'SMTP_PASSWORD',
+        provider = 'gmail'
+      )
+      
+      # Send email
+      cat(sprintf("  Sending email to %s...\n", member$email))
+      smtp_send(
+        email = email_msg,
+        from = Sys.getenv("MY_GMAIL_ACCOUNT"),
+        to = "amollozeethird@gmail.com",
+        subject = paste("💰 Weekly Savings Update - Week", isoweek(today), "|", format(today, "%B %d, %Y")),
+        credentials = my_email_creds
+      )
+      
+      cat(sprintf("  ✅ Email sent to %s\n", member$display_name))
+      
+      # Add a small delay between emails to avoid rate limiting
+      if(i < nrow(members_info)) {
+        Sys.sleep(2)
       }
     }
     
-    if (send_emails) {
-      cat("\n✅ Email sending process completed!\n")
-    } else {
-      cat("\n📊 DRY RUN COMPLETE. No emails were sent.\n")
-      cat("To send emails, run with --send flag\n")
-    }
-    
+    cat("\n✅ All Friday emails sent successfully!\n")
     return(TRUE)
     
   }, error = function(e) {
     cat("❌ Error in Friday email script:\n")
-    cat("Message:", e$message, "\n")
-    cat("Call stack:\n")
-    print(sys.calls())
+    cat(e$message, "\n")
     return(FALSE)
   })
 }
 
 # Run the function
-run_friday_email(send_emails = send_emails)
+run_friday_email()
