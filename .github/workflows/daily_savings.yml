@@ -40,7 +40,7 @@ jobs:
           R -e "library(googlesheets4); library(dplyr); library(ggplot2); print('Packages loaded successfully')"
 
       - name: Run Daily Savings Bot
-        run: Rscript daily_savings_bot.R
+        run: Rscript _daily_savings_bot.R
         env:
           BOT_TOKEN: ${{ secrets.BOT_TOKEN }}
           CHAT_ID: ${{ secrets.CHAT_ID }}
