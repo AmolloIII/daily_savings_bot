@@ -1083,5 +1083,226 @@ ggsave(combined_file, combined_plot, width = 15, height = 6, dpi = 300)
 bot$sendPhoto(chat_id = CHAT_ID, photo = combined_file, caption = "Ben's Savings Progress 📊")
 
 # =========================
+# ADDITIONAL LIBRARIES FOR ENHANCED REPORTING
+# =========================
+library(patchwork)
+library(gridExtra)
+library(grid)
+
+today <- Sys.Date()
+
+week_start <- floor_date(today, unit = "week")
+week_end <- ceiling_date(today, unit = "week") - days(1)
+
+start_date <- as.Date("2026-01-01")
+end_date <- as.Date("2026-02-13")
+all_dates <- seq(start_date, end_date, by = "day")
+
+  date = all_dates
+  year = year(all_dates)
+  month = month(all_dates, label = TRUE, abbr = FALSE)
+  month_num = month(all_dates)
+  day = day(all_dates)
+  day_of_week = wday(all_dates, label = TRUE, abbr = FALSE)
+  # daily_target = day(all_dates) * 15
+# =========================
+# WEEKLY COMPREHENSIVE REPORT (SUNDAY)
+# =========================
+if (wday(today) == 6) {   # Sunday
+  weekly_data <- savings_data %>%
+    filter(date >= week_start & date <= week_end)
+  
+  # Original weekly bar chart (Ben)
+  total_saved <- sum(weekly_data$actual, na.rm = TRUE)
+  days_saved <- sum(weekly_data$status == "Saved", na.rm = TRUE)
+  # ---- Prepare full daily data from Jan 1 to today ----
+  start_date <- as.Date("2026-01-01")
+  today_date <- today
+  
+  # Ensure one row per day with complete sequence
+  ben_full <- savings_data %>%
+    filter(date >= start_date, date <= today_date) %>%
+    arrange(date) %>%
+    tidyr::complete(
+      date = seq.Date(start_date, today_date, by = "day"),
+      fill = list(actual = 0, status = "Missed")
+    ) %>%
+    mutate(
+      daily_target = day(all_dates) * 15,
+      cumulative_target = cumsum(daily_target),
+      cumulative_actual = cumsum(actual),
+      expected_cumulative = cumulative_target,
+      day_of_month = day(date),
+      month = month(date),
+      year = year(date)
+    )
+  
+  # ---- Plot 1: Cumulative savings vs target (with gap ribbon) ----
+  p1 <- ggplot(ben_full, aes(x = date)) +
+    geom_ribbon(
+      aes(
+        ymin = pmin(cumulative_actual, cumulative_target),
+        ymax = pmax(cumulative_actual, cumulative_target),
+        alpha = as.numeric(date - min(date)) / as.numeric(max(date) - min(date))
+      ),
+      fill = "firebrick"
+    ) +
+    geom_line(aes(y = cumulative_target, color = "Target"), linewidth = 1) +
+    geom_line(aes(y = cumulative_actual, color = "Actual"), linewidth = 1) +
+    geom_label(
+      data = ben_full %>% slice_tail(n = 1),
+      aes(
+        y = cumulative_actual,
+        label = paste0("Actual: KES ", scales::comma(cumulative_actual))
+      ),
+      fill = "white", color = "darkgreen", size = 3, vjust = -0.7
+    ) +
+    geom_label(
+      data = ben_full %>% slice_tail(n = 1),
+      aes(
+        y = cumulative_target,
+        label = paste0("Target: KES ", scales::comma(cumulative_target))
+      ),
+      fill = "white", color = "blue", size = 3, vjust = -0.7
+    ) +
+    scale_color_manual(values = c("Target" = "#2b8cbe", "Actual" = "#006d2c")) +
+    scale_alpha_continuous(range = c(0.15, 1), guide = "none") +
+    scale_y_continuous(labels = scales::comma, expand = expansion(mult = c(0.08, 0.35))) +
+    scale_x_date(expand = expansion(mult = c(0.02, 0.06))) +
+    labs(title = "Cumulative Savings vs Target", x = NULL, y = "KES") +
+    theme_minimal(base_size = 10) +
+    theme(
+      legend.position = "top",
+      plot.title = element_text(face = "bold", size = 11)
+    )
+  
+  # ---- Plot 2: Cumulative progress with highlights ----
+  p2 <- ggplot(ben_full, aes(x = date)) +
+    geom_line(aes(y = cumulative_target, color = "Target"), linewidth = 1, linetype = "dashed") +
+    geom_line(aes(y = cumulative_actual, color = "Actual"), linewidth = 1.2) +
+    geom_point(aes(y = cumulative_actual, color = "Actual"), size = 1.5) +
+    geom_point(
+      data = ben_full %>% filter(date == today_date),
+      aes(y = cumulative_actual), size = 3, color = "#d7301f"
+    ) +
+    geom_point(
+      data = ben_full %>% filter(date == today_date),
+      aes(y = cumulative_target), size = 3, color = "#d7301f"
+    ) +
+    geom_label(
+      data = ben_full %>% filter(date == today_date),
+      aes(y = cumulative_actual, label = scales::comma(cumulative_actual)),
+      fill = "white", size = 3, vjust = -0.8
+    ) +
+    geom_label(
+      data = ben_full %>% filter(date == today_date),
+      aes(y = cumulative_target, label = scales::comma(cumulative_target)),
+      fill = "white", size = 3, vjust = -0.8
+    ) +
+    scale_color_manual(values = c("Actual" = "#2c7fb8", "Target" = "#fdae61")) +
+    scale_x_date(
+      breaks = seq(start_date, today_date, by = "1 week"),
+      date_labels = "%d %b",
+      expand = expansion(mult = c(0.01, 0.05))
+    ) +
+    scale_y_continuous(labels = scales::comma, expand = expansion(mult = c(0.05, 0.15))) +
+    labs(title = "Cumulative Progress with Highlights", x = NULL, y = "KES") +
+    theme_minimal(base_size = 10) +
+    theme(
+      legend.position = "top",
+      plot.title = element_text(face = "bold", size = 11)
+    )
+  
+  # ---- Plot 3: Daily savings status heatmap ----
+  p3 <- ggplot(ben_full, aes(x = date, y = 1)) +
+    geom_tile(aes(fill = status, alpha = expected_cumulative), color = "white", height = 0.9) +
+    scale_fill_manual(values = c("Saved" = "darkgreen", "Missed" = "red", "Future" = "grey80")) +
+    scale_x_date(
+      breaks = seq(start_date, today_date, by = "1 week"),
+      date_labels = "%d %b"
+    ) +
+    scale_alpha_continuous(range = c(0.3, 1), guide = "none") +
+    labs(title = "Daily Savings Status", x = NULL, y = NULL) +
+    theme_minimal(base_size = 10) +
+    theme(
+      axis.text.y = element_blank(),
+      axis.ticks.y = element_blank(),
+      panel.grid = element_blank(),
+      legend.position = "top",
+      plot.title = element_text(face = "bold", size = 11)
+    )
+  
+  # ---- Plot 4: Weekly cumulative matrix table ----
+  weekly_summary <- ben_full %>%
+    mutate(
+      week_start = floor_date(date, "week", week_start = 1),
+      week_end = week_start + days(6)
+    ) %>%
+    group_by(week_start, week_end) %>%
+    summarise(
+      Target = sum(daily_target, na.rm = TRUE),
+      Actual = sum(actual, na.rm = TRUE),
+      .groups = "drop"
+    ) %>%
+    arrange(week_start) %>%
+    mutate(
+      Week = row_number(),
+      Start = format(week_start, "%d %b"),
+      End = format(week_end, "%d %b"),
+      Status = case_when(
+        week_end < today_date ~ ifelse(Actual >= Target, "✓ Achieved", "✗ Not Achieved"),
+        week_start <= today_date & week_end >= today_date ~ "In Progress",
+        TRUE ~ "Future"
+      )
+    ) %>%
+    select(Week, Start, End, Target, Actual, Status)
+  
+  # Convert to a polished table grob
+  tt <- ttheme_minimal(
+    core = list(
+      bg_params = list(fill = c("white", "grey95"), col = "grey80"),
+      fg_params = list(fontsize = 9)
+    ),
+    colhead = list(fg_params = list(fontsize = 10, fontface = "bold")),
+    rowhead = list(fg_params = list(fontsize = 8))
+  )
+  tbl <- tableGrob(weekly_summary, rows = NULL, theme = tt)
+  p4 <- wrap_elements(tbl)
+  
+  # ---- Combine all four plots into a single image ----
+  combined_weekly <- (p1 + p2) / (p3 + p4) +
+    plot_annotation(
+      title = paste(
+        "Weekly Savings Report — Week", week(today),
+        "(", format(week_start, "%d %b"), "–", format(week_end, "%d %b"), ")"
+      ),
+      theme = theme(plot.title = element_text(face = "bold", hjust = 0.5, size = 14))
+    )
+  
+  # ---- Save and send ----
+  report_file <- "weekly_report.png"
+  ggsave(report_file, combined_weekly, width = 16, height = 12, dpi = 150)
+  
+  # Prepare caption with key metrics
+  total_saved_week <- sum(weekly_data$actual, na.rm = TRUE)
+  days_saved_week <- sum(weekly_data$status == "Saved", na.rm = TRUE)
+  
+  caption <- paste0(
+    "📊 Weekly Savings Report\n",
+    "Total Saved: KES ", scales::comma(total_saved_week), "\n",
+    "Days Saved: ", days_saved_week, "/", nrow(weekly_data), "\n\n",
+    daily_quote
+  )
+  
+  # Send using the telegram.bot method
+  bot$sendPhoto(chat_id = CHAT_ID, photo = report_file, caption = caption)
+  
+  # Optional: remove the temporary file
+  unlink(report_file)
+}
+
+
+# =========================
 # END OF SCRIPT
+
 # =========================
